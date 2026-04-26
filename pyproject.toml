@@ -1,0 +1,19 @@
+[project]
+name = "angband"
+version = "0.1.0"
+description = "Modular kernel exploit development framework with staged workflow"
+authors = [{ name = "Angband Framework" }]
+requires-python = ">=3.10"
+dependencies = [
+    "pyyaml",
+    "click",
+    "jinja2",
+]
+
+[project.scripts]
+angband = "angband.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["angband*"]
+namespaces = false

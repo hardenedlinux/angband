@@ -1,0 +1,18 @@
+name: ubuntu-26.04-x86_64
+kernel_version: "6.8"
+mitigations:
+  kpti: enabled
+  kaslr: enabled
+  smep: enabled
+  smap: enabled
+  cfi: enabled
+  cet: enabled
+  pac: disabled
+stages:
+  groom:
+    method: "buddy_allocator"
+  trigger:
+    bug_type: "cve_2024_1086_double_free"
+  escalate:
+    method: "dirty_pagedirectory"
+recommended_primitive: "pte_pmd_overlap"
