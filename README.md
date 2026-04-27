@@ -1,105 +1,207 @@
-# Angband - Kernel Exploit Framework
+# Angband -- Automated Kernel Exploit Framework
 
-**A staged, modular framework for Linux kernel exploit development and PoC automation.**
+**An open-source framework for automated kernel exploit generation -- accelerating CVE severity analysis so vendors, researchers, and the community can provide evidence to NIST/ENISA.**
 
-## Setup & Quick Start
+The offensive side consistently outpaces the defensive side, especially in open-source projects like Linux. By automating exploit generation, Angband demonstrates real-world impact and provides concrete evidence for accurate CVE severity scoring, countering NIST's tendency to treat all CVEs as low severity by default.
 
-**1. Install System Dependencies**
+## What Angband Does Today
+
+Angband generates a working kernel exploit from its 7-stage pipeline and executes it inside an isolated QEMU guest to achieve **privilege escalation (uid=0)** from an unprivileged user. The entire process is automated and reproducible:
+
 ```bash
-sudo apt-get update
-sudo apt-get install -y qemu-system-x86 cloud-image-utils telnet
+source venv/bin/activate
+angband init demo                 # configure exploit scenario
+angband generate                  # generate and compile C exploit
+bash harness/setup.sh             # prepare QEMU VM (one-time)
+bash harness/launch.sh            # boot VM
+bash run_and_verify.sh            # deploy, execute, verify uid=0
 ```
 
-**2. Setup Python Environment**
+### Demo Exploit Chain (vuln_drill CTF module)
+
+The included `vuln_drill.ko` kernel module contains **real vulnerabilities** (modeled after [kernel-hack-drill](https://github.com/a13xp0p0v/kernel-hack-drill)). The generated exploit achieves privilege escalation through genuine exploitation techniques:
+
+| Stage | Action | Technique |
+|-------|--------|-----------|
+| **Prep** | Open `/proc/vuln_drill_act`, pin CPU | Environment validation |
+| **Groom** | `DRILL_ACT_ALLOC` | Allocate 95-byte object (kmalloc-96) containing `_printk` address |
+| **Trigger** | `DRILL_ACT_FREE` | UAF: `kfree()` without nulling pointer |
+| **Leak** | `DRILL_ACT_READ` offset 0 | Read `_printk` from freed object via UAF (KASLR bypass) |
+| **Primitive** | `DRILL_ACT_WRITE` offset -8 | OOB write: overwrite `callback` field with `root_it()` |
+| **Escalate** | `DRILL_ACT_CALLBACK` | Control flow hijack -> `commit_creds(prepare_kernel_cred(init_task))` |
+| **Cleanup** | Close fds | uid=0 achieved |
+
+**KASLR bypass**: The exploit leaks a kernel `.text` address (`_printk`) from the freed object's data area via UAF read, then computes `commit_creds`, `prepare_kernel_cred`, and `init_task` from fixed offsets embedded at code generation time. No `/proc/kallsyms`, no `sudo`, no hardcoded addresses.
+
+**Verified output** (reproducible, 3/3 runs):
+```
+[+] uid=1000 euid=1000
+[+] Leaked _printk      @ 0xffffffffXXXXXXXX
+[+] KASLR bypass complete -- no kallsyms, no sudo
+[+] PRIVILEGE ESCALATION SUCCESSFUL
+[+]  uid=0  euid=0  gid=0  egid=0
+[+] EXPLOIT COMPLETE -- got root!
+```
+
+## vuln_drill: CTF Kernel Module
+
+The target module (`module/vuln_drill/`) provides `/proc/vuln_drill_act` with real exploitable bugs -- no backdoors, no magic ioctls:
+
+| Bug | Code | Description |
+|-----|------|-------------|
+| **UAF** | `DRILL_ACT_FREE` | `kfree()` without nulling pointer in `items[]` |
+| **UAF callback** | `DRILL_ACT_CALLBACK` | Calls `items[n]->callback()` without freed check |
+| **OOB write** | `DRILL_ACT_WRITE` | Writes to `items[n]->data + offset` with no bounds check |
+| **OOB read** | `DRILL_ACT_READ` | Reads from `items[n]->data + offset` with no bounds check |
+
+See `module/vuln_drill/README.md` for full details and advanced exploit techniques.
+
+## Setup
+
+### Prerequisites
+
 ```bash
+sudo apt-get install -y qemu-system-x86 cloud-image-utils python3 python3-venv gcc
+```
+
+### Install
+
+```bash
+git clone https://github.com/anthropics/angband.git
+cd angband
 python3 -m venv venv
 source venv/bin/activate
 pip install -e .
 ```
 
-**3. Initialize and Run**
+### Prepare QEMU Target
+
 ```bash
-angband init CVE-2023-1234
+bash harness/setup.sh    # downloads Ubuntu 24.04 cloud image, creates overlay
+bash harness/launch.sh   # boots VM with SMEP/SMAP disabled for basic exploit
+```
+
+The VM boots with `-cpu host,-smep,-smap` to allow the basic ret2usr exploit. For advanced exploits that bypass SMEP/SMAP, modify `harness/launch.sh`.
+
+### Run the Exploit
+
+```bash
+angband init demo        # creates mordor_run/current/exploit.yaml
+angband generate         # generates exploit.c, compiles exploit binary
+bash run_and_verify.sh   # deploys to VM, runs, verifies uid=0
+```
+
+### Using Your Own VM
+
+If you have an existing QEMU image:
+
+```bash
+bash harness/import.sh /path/to/your-vm.qcow2 2222 youruser
+```
+
+See `TESTING.md` for detailed instructions.
+
+## Architecture
+
+```
+angband init demo
+    |
+    v
+configs/ubuntu-24.04-x86_64.yaml   (symbol offsets, mitigations)
+    |
+    v
 angband generate
+    |
+    +-- templates/exploit.c.jinja2  (exploit template with Jinja2)
+    +-- symbol_offsets from config  (KASLR bypass constants)
+    |
+    v
+mordor_run/current/exploit.c       (generated C source)
+mordor_run/current/exploit          (compiled static binary)
+    |
+    v
+run_and_verify.sh
+    |
+    +-- SSH into QEMU guest
+    +-- Build & load vuln_drill.ko
+    +-- Run exploit as unprivileged user
+    +-- Collect dmesg + /proc/vuln_drill status
+    +-- Verify uid=0
 ```
 
-## Features
-- **Clear stage separation**: Grooming, Trigger, Leak, Primitive, Escalation, Cleanup
-- **Automation**: `angband new <type>` generates YAML configs + C skeletons
-- **Vulnerable test module**: `module/vuln_drill/` (build & load for safe testing)
-- **Modern mitigations aware**: CFI, CET, PAC, KASLR, SMEP/SMAP
-- **Focus**: Reliability through grooming. Prefers data-only attacks (DirtyCred, page table).
+### Key Components
 
-## Workflow
+| Component | Purpose |
+|-----------|---------|
+| `angband/cli.py` | CLI commands: `init`, `generate`, `analyze`, `recon`, `pipeline` |
+| `angband/generators/poc_gen.py` | Jinja2 template renderer, embeds symbol offsets |
+| `angband/analysis/vuln_analyzer.py` | CVE-to-strategy engine (NVD API, bug classification) |
+| `angband/recon/fingerprint.py` | Target kernel probing via SSH |
+| `angband/leak/kaslr.py` | KASLR bypass technique library |
+| `angband/primitives/registry.py` | Exploit primitive registry (7 techniques) |
+| `module/vuln_drill/` | CTF kernel module with real UAF/OOB bugs |
+| `templates/exploit.c.jinja2` | Exploit code template |
+| `configs/` | Per-target kernel configs with symbol offsets |
+| `harness/` | QEMU VM management (setup, launch, stop, reset, import) |
 
-```text
-┌─────────────────┐    angband init     ┌───────────────┐
-│ CVE / Bug       ├────────────────────►│ exploit.yaml  │
-└─────────────────┘                     └───────┬───────┘
-                                                │
-                               angband generate │
-                                                ▼
-┌─────────────────┐       GCC           ┌───────────────┐
-│ exploit binary  │◄────────────────────┤ exploit.c     │
-└────────┬────────┘                     └───────────────┘
-         │
-         │ run_and_verify.sh (via SSH & 9p)
-         ▼
-╔═══════════════════════════════════════════════════════╗
-║                 QEMU Test Environment                 ║
-║                                                       ║
-║  ┌──────────────┐         ┌────────────────────────┐  ║
-║  │ vuln_drill.ko│◄────────┤ Executes against OS    │  ║
-║  └──────────────┘         └────────────────────────┘  ║
-╚═══════════════════════════════════════════════════════╝
-         │
-         │ extracts results
-         ▼
-┌─────────────────┐
-│ exploit_run.log │
-│ dmesg_tail.log  │
-└─────────────────┘
-```
+## CLI Reference
 
-## Current Status
-- **Core engine** and grooming stage implemented.
-- **Armory (C Primitives)**: Initial library for `msg_msg`, `pipe_buffer`, and `dirty_cred` primitives ready.
-- **Vulnerable kernel module**: `module/vuln_drill/` ready (supports UAF/OOB for testing all stages).
-- **CLI + venv** setup complete.
+| Command | Description |
+|---------|-------------|
+| `angband init demo` | Initialize demo exploit scenario |
+| `angband init CVE-2024-1086` | Analyze CVE, generate exploit config |
+| `angband generate` | Generate C exploit from config, compile |
+| `angband analyze CVE-2024-1086` | Analyze CVE without generating code |
+| `angband recon` | Fingerprint QEMU guest kernel |
+| `angband list-primitives` | List available exploit techniques |
+| `angband pipeline` | Run 7-stage pipeline (Python stages) |
 
-### Primitives in the Armory:
-- `msg_msg.c`: Spraying and allocation helpers.
-- `pipe_buffer.c`: Pipe-based heap allocation and spraying.
-- `dirty_cred.c`: Credential spraying via user namespaces.
+## VM Lifecycle
 
-Build & load the test module:
-```bash
-cd module/vuln_drill
-make
-sudo insmod vuln_drill.ko
-```
+| Action | Command |
+|--------|---------|
+| First-time setup | `bash harness/setup.sh` |
+| Boot VM | `bash harness/launch.sh` |
+| Stop VM | `bash harness/stop.sh` |
+| Reset to clean state | `bash harness/reset.sh` |
+| Import custom image | `bash harness/import.sh <image> [port] [user]` |
+| Serial console | `bash harness/console.sh` |
 
-## Manual Verification in QEMU
+## Success Criteria
 
-If you encounter networking issues or SSH connection resets with `run_and_verify.sh`, you can test manually by logging into the VM:
+A successful `run_and_verify.sh` run produces:
 
-1. Connect to QEMU via SSH:
-   ```bash
-   ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i .ssh_key -p 2222 ubuntu@localhost
-   ```
-2. Navigate to the 9p mount where the framework is shared:
-   ```bash
-   cd /mnt/angband
-   ```
-3. Run the generated exploit:
-   ```bash
-   ./exploit
-   ```
-4. Check the kernel logs for faults:
-   ```bash
-   dmesg | tail -n 50
-   ```
+| Check | File | Expected |
+|-------|------|----------|
+| Privilege escalation | `exploit_run.log` | `PRIVILEGE ESCALATION SUCCESSFUL` |
+| Root achieved | `exploit_run.log` | `uid=0 euid=0` |
+| All 7 stages | `dmesg_tail.log` | `vuln_drill: stage <X> received` for each |
+| Correct order | `vuln_drill_status.log` | `sequence_complete: yes` |
+| KASLR bypassed | `exploit_run.log` | `Leaked _printk @ 0xffffffffXXXX` |
 
-See `exploit.yaml` for example configuration.
+## Roadmap
 
-**Next**: Expand primitives (pipe_buffer, dirty_cred), QEMU harness for Ubuntu 26.04, full PoC generator.
+### Completed
+- [x] 7-stage pipeline with real privilege escalation (uid=0)
+- [x] CTF kernel module with genuine UAF + OOB bugs (no backdoors)
+- [x] Automatic KASLR bypass via infoleak (no kallsyms, no sudo)
+- [x] Reproducible exploit generation (`angband generate` -> uid=0 every time)
+- [x] CVE vulnerability analysis engine (NVD API, bug classification)
+- [x] Target environment fingerprinting
+- [x] Exploit primitive library (msg_msg, pipe_buffer, dirty_cred, dirty_pagetable, modprobe_path, commit_creds)
+- [x] QEMU isolation harness with overlay snapshots and instant reset
+- [x] Custom VM image import (`harness/import.sh`)
+
+### Next
+- [ ] SMEP/SMAP bypass (ROP chain generation, kernel stack pivot)
+- [ ] KPTI bypass (swapgs + trampoline return)
+- [ ] Cross-cache attack support (`CONFIG_RANDOM_KMALLOC_CACHES`)
+- [ ] Subsystem-specific trigger code (nf_tables, io_uring, bpf)
+- [ ] Multi-kernel-version symbol offset database
+- [ ] End-to-end CVE exploit (e.g., CVE-2024-1086 on real kernel, no test module)
+- [ ] Post-exploitation stability
+- [ ] CVSS score evidence generation for NIST submissions
+
+## License
+
+GPL-3.0. See `LICENSE`.

@@ -1,36 +1,51 @@
 #!/bin/bash
+# ---------------------------------------------------------------
+# harness/stop.sh -- Stop the QEMU test VM
+# ---------------------------------------------------------------
+set -euo pipefail
 
-echo "[Angband] Stopping QEMU Harness..."
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+HARNESS_DIR="$REPO_ROOT/mordor_run/harness"
 
-if [ -f "qemu_wrapper.pid" ]; then
-    WRAPPER_PID=$(cat qemu_wrapper.pid)
-    echo "[*] Killing wrapper process $WRAPPER_PID..."
-    kill -9 $WRAPPER_PID 2>/dev/null
-    rm qemu_wrapper.pid
+echo "[Angband] Stopping QEMU VM..."
+
+stopped=0
+
+# Kill the wrapper (nohup shell) first
+if [ -f "$HARNESS_DIR/qemu_wrapper.pid" ]; then
+    WRAPPER_PID=$(cat "$HARNESS_DIR/qemu_wrapper.pid")
+    if kill -0 "$WRAPPER_PID" 2>/dev/null; then
+        kill "$WRAPPER_PID" 2>/dev/null || true
+    fi
+    rm -f "$HARNESS_DIR/qemu_wrapper.pid"
 fi
 
-if [ -f "qemu.pid" ]; then
-    QEMU_PID=$(cat qemu.pid)
-    echo "[*] Terminating QEMU VM (PID: $QEMU_PID)..."
-    kill $QEMU_PID 2>/dev/null
-    
-    # Wait for graceful shutdown
-    sleep 2
-    if kill -0 $QEMU_PID 2>/dev/null; then
-        echo "[!] QEMU did not terminate gracefully. Forcing kill..."
-        kill -9 $QEMU_PID 2>/dev/null
+# Then kill the QEMU process
+if [ -f "$HARNESS_DIR/qemu.pid" ]; then
+    QEMU_PID=$(cat "$HARNESS_DIR/qemu.pid")
+    if kill -0 "$QEMU_PID" 2>/dev/null; then
+        echo "[*] Terminating QEMU (PID $QEMU_PID)..."
+        kill "$QEMU_PID" 2>/dev/null || true
+        # Wait up to 5 seconds for graceful shutdown
+        for i in $(seq 1 10); do
+            if ! kill -0 "$QEMU_PID" 2>/dev/null; then
+                break
+            fi
+            sleep 0.5
+        done
+        # Force kill if still running
+        if kill -0 "$QEMU_PID" 2>/dev/null; then
+            echo "[*] Force-killing QEMU..."
+            kill -9 "$QEMU_PID" 2>/dev/null || true
+        fi
+        stopped=1
     fi
-    
-    rm qemu.pid
+    rm -f "$HARNESS_DIR/qemu.pid"
+fi
+
+if [ "$stopped" -eq 1 ]; then
     echo "[+] QEMU stopped."
 else
-    # Fallback if PID file is missing
-    QEMU_PIDS=$(pgrep -f "qemu-system-x86_64.*-pidfile qemu.pid")
-    if [ ! -z "$QEMU_PIDS" ]; then
-        echo "[*] Found lingering QEMU processes. Killing..."
-        kill -9 $QEMU_PIDS 2>/dev/null
-        echo "[+] Lingering QEMU instances stopped."
-    else
-        echo "[-] No QEMU instance found running."
-    fi
+    echo "[-] No running QEMU instance found."
 fi

