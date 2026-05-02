@@ -138,8 +138,10 @@ run_and_verify.sh
 | `angband/analysis/vuln_analyzer.py` | CVE-to-strategy engine (NVD API, bug classification) |
 | `angband/recon/fingerprint.py` | Target kernel probing via SSH |
 | `angband/leak/kaslr.py` | KASLR bypass technique library |
-| `angband/primitives/registry.py` | Exploit primitive registry (7 techniques) |
-| `module/vuln_drill/` | CTF kernel module with real UAF/OOB bugs |
+| `angband/primitives/registry.py` | Exploit primitive registry (12 techniques) |
+| `angband/recon/slab.py` | Slab cache detection, RANDOM_KMALLOC_CACHES probe |
+| `primitives/` | Reusable C exploit libraries (netlink, userns, kaslr, dirty_pagetable) |
+| `module/vuln_drill/` | CTF kernel module with real UAF/OOB bugs + 4K alloc + kernel write |
 | `templates/exploit.c.jinja2` | Exploit code template |
 | `configs/` | Per-target kernel configs with symbol offsets |
 | `harness/` | QEMU VM management (setup, launch, stop, reset, import) |
@@ -153,7 +155,7 @@ run_and_verify.sh
 | `angband generate` | Generate C exploit from config, compile |
 | `angband analyze CVE-2024-1086` | Analyze CVE without generating code |
 | `angband recon` | Fingerprint QEMU guest kernel |
-| `angband list-primitives` | List available exploit techniques |
+| `angband list-primitives` | List available exploit primitives (12 techniques) |
 | `angband pipeline` | Run 7-stage pipeline (Python stages) |
 
 ## VM Lifecycle
@@ -186,19 +188,32 @@ A successful `run_and_verify.sh` run produces:
 - [x] CTF kernel module with genuine UAF + OOB bugs (no backdoors)
 - [x] Automatic KASLR bypass via infoleak (no kallsyms, no sudo)
 - [x] Reproducible exploit generation (`angband generate` -> uid=0 every time)
-- [x] CVE vulnerability analysis engine (NVD API, bug classification)
-- [x] Target environment fingerprinting
-- [x] Exploit primitive library (msg_msg, pipe_buffer, dirty_cred, dirty_pagetable, modprobe_path, commit_creds)
+- [x] CVE vulnerability analysis engine (NVD API, bug classification, version-range checking)
+- [x] Target environment fingerprinting (kernel version, mitigations, slab state)
+- [x] Exploit primitive library (12 techniques: msg_msg, pipe_buffer, setxattr, dirty_cred, modprobe_path, dirty_pagetable, commit_creds, netlink_ops, userns_setup, pcpu_stats, kallsyms_leak, kaslr_sidechannel)
 - [x] QEMU isolation harness with overlay snapshots and instant reset
 - [x] Custom VM image import (`harness/import.sh`)
+- [x] Reusable C primitives auto-linked by `angband generate` (netlink, userns, KASLR, dirty_pagetable)
+- [x] CVE knowledge base with pre-configured exploit strategies and per-kernel-version applicability
+- [x] User + network namespace setup for CAP_NET_ADMIN exploitation
+- [x] CONFIG_RANDOM_KMALLOC_CACHES detection and page-level bypass primitive (Dirty Pagetable)
+- [x] KASLR bypass via kallsyms (parent namespace) + kcore ELF parsing for kernel memory reads
+
+### In Progress
+- [ ] CVE-2026-23209 (macvlan UAF) -- **analyzed and confirmed real** on kernel 6.8.0-101
+  - UAF trigger works: `free_netdev()` after failed `register_netdevice()` leaves stale `macvlan_source_entry->vlan` pointer
+  - Panic confirmed at `macvlan_forward_source+0x78` (CR2=0xb0, `vlan->dev = NULL` deref via IPv6 DAD workqueue)
+  - `alloc_netdev_mqs → kvzalloc` path reclaims the freed slot (verified via dummy interface create/destroy)
+  - **Blocker**: `CONFIG_RANDOM_KMALLOC_CACHES` (16-way randomized caches) prevents same-cache spray from userspace; needs Dirty Pagetable page-level bypass to complete the chain
+  - Framework has ALL primitives needed (netlink ops, userns, KASLR leak, kcore ELF parsing, pcpu_stats write, Dirty Pagetable); just needs slab-drain + PTE-reclaim integration
 
 ### Next
 - [ ] SMEP/SMAP bypass (ROP chain generation, kernel stack pivot)
 - [ ] KPTI bypass (swapgs + trampoline return)
-- [ ] Cross-cache attack support (`CONFIG_RANDOM_KMALLOC_CACHES`)
 - [ ] Subsystem-specific trigger code (nf_tables, io_uring, bpf)
 - [ ] Multi-kernel-version symbol offset database
-- [ ] End-to-end CVE exploit (e.g., CVE-2024-1086 on real kernel, no test module)
+- [ ] Full CVE-2026-23209 exploit chain: slab drain → PTE reclaim → pcpu_stats write → modprobe_path overwrite → init-ns root
+- [ ] Additional CVE targets (CVE-2026-23412, CVE-2026-23340)
 - [ ] Post-exploitation stability
 - [ ] CVSS score evidence generation for NIST submissions
 

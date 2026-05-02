@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+venv/
+
+# Runtime output (exploit binaries, logs, VM images, SSH keys)
+mordor_run/
+
+# Kernel module build artifacts
+*.ko
+*.o
+*.mod
+*.mod.c
+*.mod.o
+*.order
+*.symvers
+Module.symvers
+modules.order
+.tmp_*
+.vuln_drill*
+
+# Editor swap files
+*.swp
+*.swo
+*~

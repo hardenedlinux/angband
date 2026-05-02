@@ -28,15 +28,17 @@
 /* Buffer size for the act string: "act item val offset\0" */
 #define DRILL_ACT_SIZE 59
 
-/* Actions */
+	/* Actions */
 enum drill_act_t {
-	DRILL_ACT_NONE     = 0,
-	DRILL_ACT_ALLOC    = 1,
-	DRILL_ACT_CALLBACK = 2,
-	DRILL_ACT_WRITE    = 3,
-	DRILL_ACT_FREE     = 4,
-	DRILL_ACT_RESET    = 5,
-	DRILL_ACT_READ     = 6
+	DRILL_ACT_NONE       = 0,
+	DRILL_ACT_ALLOC      = 1,
+	DRILL_ACT_CALLBACK   = 2,
+	DRILL_ACT_WRITE      = 3,
+	DRILL_ACT_FREE       = 4,
+	DRILL_ACT_RESET      = 5,
+	DRILL_ACT_READ       = 6,
+	DRILL_ACT_ALLOC_4K   = 7,  /* allocate kmalloc-4k object */
+	DRILL_ACT_KWRITE_INC = 8,  /* increment *((ulong*)(item->data[0..7]) + off) */
 };
 
 /*

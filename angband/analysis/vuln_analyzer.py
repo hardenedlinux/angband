@@ -93,6 +93,12 @@ class ExploitPlan:
     cve_id: str = ""
     commit_hash: str = ""
     description: str = ""
+    cve_profile: str = "generic"     # template profile name (e.g. "macvlan_uaf")
+
+    # Version range
+    introduced_in: str = ""  # kernel version where the bug was introduced
+    fixed_in: str = ""       # kernel version where the bug was fixed
+    ubuntu_fixed: str = ""   # Ubuntu kernel package version that fixes it
 
     # Bug characterization
     bug_class: BugClass = BugClass.UNKNOWN
@@ -140,6 +146,7 @@ class ExploitPlan:
             "exploit_name": self.cve_id or "unknown",
             "reference_id": self.cve_id,
             "mode": "exploit",
+            "cve_profile": getattr(self, "cve_profile", "generic"),
             "demo_profile": "cve_exploit",
             "kernel_target": "real",
             "scenario": self.description or f"Full-chain exploit for {self.cve_id}",
@@ -158,6 +165,7 @@ class ExploitPlan:
                     "method": self.groom_technique or "simulation_only",
                     "cache": self.groom_cache,
                     "spray_count": self.spray_count,
+                    "msg_size": self.object_size - 48 if self.object_size > 48 else 256,
                 },
                 "trigger": {
                     "bug_type": self.bug_class.value,
@@ -435,8 +443,164 @@ def estimate_slab_cache(obj_name: str, obj_size: int = 0) -> str:
 class VulnAnalyzer:
     """Main vulnerability analysis engine."""
 
+    # ------------------------------------------------------------------
+    # CVE Knowledge Base -- pre-configured exploit strategies for known CVEs
+    #
+    # Each entry maps a CVE to a complete ExploitPlan.  When the analyzer
+    # encounters a known CVE, it skips NVD heuristics and uses this plan.
+    # Unknown CVEs fall back to generic bug-class-based strategy selection.
+    # ------------------------------------------------------------------
+
+    KNOWN_CVES: dict[str, dict] = {
+        "CVE-2026-23209": {
+            "cve_id": "CVE-2026-23209",
+            "cve_profile": "macvlan_uaf",
+            "bug_class": BugClass.USE_AFTER_FREE,
+            "subsystem": Subsystem.NETWORK_STACK,
+            "affected_object": "macvlan_dev",
+            "affected_slab_cache": "kmalloc-4k",
+            "object_size": 2320,
+            "groom_technique": "msg_msg_spray",
+            "groom_cache": "kmalloc-4k",
+            "trigger_method": "macvlan_netlink",
+            "leak_technique": "kallsyms",
+            "primary_primitive": "pcpu_stats",
+            "escalation_path": EscalationPath.MODPROBE_PATH,
+            "cleanup_method": "netlink_cleanup",
+            "requires_namespaces": True,
+            "requires_userfaultfd": False,
+            "requires_io_uring": False,
+            "requires_unprivileged_bpf": False,
+            "spray_count": 256,
+            "confidence": "high",
+            "introduced_in": "4.9.1",
+            "fixed_in": "6.12.70",
+            "ubuntu_fixed": "6.8.0-104.104",
+            "description": (
+                "macvlan UAF: free_netdev() after failed register_netdevice() "
+                "leaves stale macvlan_source_entry->vlan pointer. "
+                "Packet receive path dereferences freed macvlan_dev, "
+                "allowing pcpu_stats hijack for arbitrary kernel increment. "
+                "Escalation via modprobe_path overwrite."
+            ),
+        },
+        "CVE-2026-23412": {
+            "cve_id": "CVE-2026-23412",
+            "cve_profile": "netfilter_uaf",
+            "bug_class": BugClass.USE_AFTER_FREE,
+            "subsystem": Subsystem.NETFILTER,
+            "affected_object": "nf_hook_entry",
+            "affected_slab_cache": "kmalloc-128",
+            "object_size": 128,
+            "groom_technique": "msg_msg_spray",
+            "groom_cache": "kmalloc-128",
+            "trigger_method": "nfnetlink_hooks_dump",
+            "leak_technique": "kallsyms",
+            "primary_primitive": "msg_msg_primitive",
+            "escalation_path": EscalationPath.MODPROBE_PATH,
+            "cleanup_method": "safe_reset",
+            "requires_namespaces": True,
+            "requires_userfaultfd": False,
+            "requires_io_uring": False,
+            "requires_unprivileged_bpf": True,
+            "spray_count": 256,
+            "confidence": "medium",
+            "introduced_in": "6.4.1",
+            "fixed_in": "6.12.78",
+            "ubuntu_fixed": "6.8.0-107",  # if exists, or later
+            "description": (
+                "netfilter BPF hook UAF: concurrent nfnetlink_hooks dump and "
+                "hook modification leads to use-after-free on nf_hook_entry. "
+                "Triggered via nfnetlink socket operations."
+            ),
+        },
+    }
+
+    def _lookup_known_cve(self, cve_id: str) -> ExploitPlan | None:
+        """Check if this CVE has a pre-configured exploit strategy."""
+        entry = self.KNOWN_CVES.get(cve_id.upper())
+        if entry is None:
+            return None
+
+        plan = ExploitPlan(
+            cve_id=entry.get("cve_id", cve_id),
+            bug_class=entry["bug_class"],
+            subsystem=entry["subsystem"],
+            affected_object=entry.get("affected_object", ""),
+            affected_slab_cache=entry.get("affected_slab_cache", ""),
+            object_size=entry.get("object_size", 0),
+            groom_technique=entry.get("groom_technique", ""),
+            groom_cache=entry.get("groom_cache", ""),
+            trigger_method=entry.get("trigger_method", ""),
+            leak_technique=entry.get("leak_technique", ""),
+            primary_primitive=entry.get("primary_primitive", ""),
+            escalation_path=entry["escalation_path"],
+            cleanup_method=entry.get("cleanup_method", ""),
+            requires_namespaces=entry.get("requires_namespaces", False),
+            requires_userfaultfd=entry.get("requires_userfaultfd", False),
+            requires_io_uring=entry.get("requires_io_uring", False),
+            requires_unprivileged_bpf=entry.get("requires_unprivileged_bpf", False),
+            spray_count=entry.get("spray_count", 256),
+            confidence=entry.get("confidence", "high"),
+            description=entry.get("description", ""),
+            introduced_in=entry.get("introduced_in", ""),
+            fixed_in=entry.get("fixed_in", ""),
+            ubuntu_fixed=entry.get("ubuntu_fixed", ""),
+        )
+        plan.cve_profile = entry.get("cve_profile", "generic")
+        return plan
+
+    def check_cve_applicable(self, cve_id: str, kernel_release: str) -> tuple[bool, str]:
+        """Check if a CVE applies to a specific kernel release.
+
+        Returns (is_vulnerable, reason_string).
+        Uses the Ubuntu kernel version scheme: e.g. "6.8.0-106-generic"
+        """
+        entry = self.KNOWN_CVES.get(cve_id.upper())
+        if entry is None:
+            return True, "unknown CVE (no version data)"
+
+        ubuntu_fixed = entry.get("ubuntu_fixed", "")
+        if not ubuntu_fixed:
+            return True, "no Ubuntu version data in knowledge base"
+
+        # Extract Ubuntu kernel version for comparison
+        # Format: "6.8.0-106-generic" or "6.8.0-106.106-generic"
+        import re
+        vm = re.match(r"(\d+\.\d+\.\d+)-(\d+)", kernel_release)
+        if not vm:
+            return True, f"cannot parse kernel version: {kernel_release}"
+
+        base = vm.group(1)
+        abi = int(vm.group(2))
+
+        # Parse the fixed version
+        fvm = re.match(r"(\d+\.\d+\.\d+)-(\d+)", ubuntu_fixed)
+        if not fvm:
+            return True, f"cannot parse fixed version: {ubuntu_fixed}"
+
+        fbase = fvm.group(1)
+        fabi = int(fvm.group(2))
+
+        if base < fbase or (base == fbase and abi < fabi):
+            return True, (
+                f"kernel {kernel_release} is VULNERABLE "
+                f"(fixed in {ubuntu_fixed})"
+            )
+        else:
+            return False, (
+                f"kernel {kernel_release} is PATCHED "
+                f"(fix in {ubuntu_fixed})"
+            )
+
     def analyze_cve(self, cve_id: str) -> ExploitPlan:
         """Analyze a CVE and produce an exploitation plan."""
+
+        # First: check if we have a known strategy for this CVE
+        known = self._lookup_known_cve(cve_id)
+        if known is not None:
+            return known
+
         plan = ExploitPlan(cve_id=cve_id)
 
         # Fetch CVE data from NVD

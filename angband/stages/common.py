@@ -30,3 +30,25 @@ def require_demo_mode(config: dict) -> bool:
         print(f"[Angband] Unsupported mode '{mode}'. Use 'demo' or 'exploit'.")
         return False
     return True
+
+
+def target_kernel_release() -> str | None:
+    """Read the target kernel release from fingerprint or local uname."""
+    import json
+    import subprocess
+
+    fp_path = Path("mordor_run/current/fingerprint.json")
+    if fp_path.exists():
+        try:
+            with open(fp_path) as f:
+                data = json.load(f)
+            return data.get("kernel_release")
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    try:
+        return subprocess.check_output(
+            ["uname", "-r"], text=True
+        ).strip()
+    except (subprocess.SubprocessError, FileNotFoundError):
+        return None

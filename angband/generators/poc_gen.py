@@ -22,6 +22,7 @@ class PocGenerator:
             "reference_id": config.get("reference_id"),
             "target": config.get("target", "ubuntu-24.04-x86_64"),
             "mode": mode,
+            "cve_profile": config.get("cve_profile", "generic"),
             "demo_profile": config.get("demo_profile", "vuln_drill"),
             "kernel_target": config.get("kernel_target", "none"),
             "scenario": config.get("scenario", ""),
@@ -39,6 +40,7 @@ class PocGenerator:
             "object_size": config.get("object_size", 0),
             "escalation_path": config.get("escalation_path", "unknown"),
             "spray_count": config.get("stages", {}).get("groom", {}).get("spray_count", 256),
+            "spray_msg_size": config.get("stages", {}).get("groom", {}).get("msg_size", 256),
             "groom_cache": config.get("stages", {}).get("groom", {}).get("cache", ""),
             "confidence": config.get("confidence", "low"),
             # Symbol offsets for KASLR bypass (from target config)

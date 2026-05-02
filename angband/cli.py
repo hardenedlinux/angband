@@ -129,6 +129,21 @@ def init(cve_or_commit: str, target: str):
             click.echo(f"[+] Escalation path: {plan.escalation_path.value}")
             if plan.affected_slab_cache:
                 click.echo(f"[+] Target slab cache: {plan.affected_slab_cache}")
+
+            # Check if CVE applies to the target kernel
+            try:
+                from angband.stages.common import target_kernel_release
+                kernel_rel = target_kernel_release()
+                if kernel_rel:
+                    from angband.analysis.vuln_analyzer import VulnAnalyzer
+                    applicable, reason = VulnAnalyzer().check_cve_applicable(
+                        cve_or_commit.upper(), kernel_rel
+                    )
+                    status = "[+] VULNERABLE" if applicable else "[!] PATCHED"
+                    click.echo(f"[*] {status}: {reason}")
+            except Exception:
+                pass
+
             click.echo(f"[+] Created {config_path}")
             click.echo("[*] Next step: 'angband generate' to produce exploit code")
 
@@ -183,8 +198,14 @@ def generate(output: str):
     click.echo(f"[+] Payload generated: {output_path}")
     click.echo("[*] Compiling...")
 
-    # Link primitives when in exploit mode
-    compile_cmd = ["gcc", "-Wall", "-Wextra", "-static", "-o", str(binary_path), str(output_path)]
+    primitives_dir = workspace_root() / "primitives"
+    primitive_sources = sorted(primitives_dir.glob("*.c"))
+    include_flag = f"-I{primitives_dir}"
+
+    compile_cmd = (
+        ["gcc", "-Wall", "-Wextra", "-static", include_flag, "-o", str(binary_path), str(output_path)]
+        + [str(p) for p in primitive_sources]
+    )
 
     result = subprocess.run(compile_cmd, capture_output=True, text=True)
     if result.returncode == 0:

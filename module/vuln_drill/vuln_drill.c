@@ -91,6 +91,42 @@ static int drill_act_exec(long act, char *arg1_str, char *arg2_str,
 		drill_item_setup(drill.items[n]);
 		break;
 
+	case DRILL_ACT_ALLOC_4K:
+		drill.items[n] = kzalloc(4096, GFP_KERNEL);
+		if (drill.items[n] == NULL) {
+			pr_err("vuln_drill: OOM for 4K item\n");
+			return -ENOMEM;
+		}
+		pr_notice("vuln_drill: alloc 4K item %lu (%px)\n",
+			  n, drill.items[n]);
+		drill_item_setup(drill.items[n]);
+		break;
+
+	case DRILL_ACT_KWRITE_INC:
+		{
+			unsigned long target;
+			long off;
+			unsigned long *p;
+
+			if (!arg2_str) {
+				pr_err("vuln_drill: kwrite_inc: missing offset\n");
+				return -EINVAL;
+			}
+			ret = kstrtoul(arg2_str, 0, &offset);
+			if (ret) {
+				pr_err("vuln_drill: kwrite_inc: bad offset %s\n", arg2_str);
+				return -EINVAL;
+			}
+			/* Read target address from item->data[0..7] (no bounds check) */
+			target = *(unsigned long *)drill.items[n]->data;
+			p = (unsigned long *)(target + offset);
+			pr_notice("vuln_drill: kwrite_inc target=0x%lx off=%ld addr=%px val_before=0x%lx\n",
+				  target, offset, p, *p);
+			*p += 1;
+			pr_notice("vuln_drill: kwrite_inc val_after=0x%lx\n", *p);
+		}
+		break;
+
 	case DRILL_ACT_CALLBACK:
 		pr_notice("vuln_drill: callback 0x%lx for item %lu (%px)\n",
 			  (unsigned long)drill.items[n]->callback,
