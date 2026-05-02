@@ -23,6 +23,7 @@ int nl_create_veth(int fd, const char *name1, const char *name2);
 int nl_delete_link(int fd, const char *name);
 int nl_create_macvlan(int fd, const char *name, const char *lower,
                       int mode, const unsigned char *macaddr, int macaddr_mode);
+int nl_create_dummy(int fd, const char *name);
 
 int nl_add_attr_max(struct nlmsghdr *nlh, unsigned short type,
                     const void *data, unsigned short len, size_t max_size);

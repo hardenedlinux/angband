@@ -6,7 +6,8 @@
 # is never modified; all guest writes go into the overlay.
 #
 # SSH access:  ssh -i mordor_run/ssh/id_ed25519 -p 2222 ubuntu@localhost
-# Serial:      telnet localhost 4444  (or: bash harness/console.sh)
+# Serial log:  tail -f mordor_run/harness/serial.log
+# QEMU Monitor: telnet localhost 4445  (for 'info' commands)
 # GDB:         localhost:1234
 # ---------------------------------------------------------------
 set -euo pipefail
@@ -84,7 +85,8 @@ nohup qemu-system-x86_64 \
     -display none \
     -s \
     -virtfs local,path="$REPO_ROOT",mount_tag=host0,security_model=passthrough,id=host0 \
-    -serial telnet:localhost:4444,server,nowait \
+    -serial file:"$HARNESS_DIR/serial.log" \
+    -monitor telnet:localhost:4445,server,nowait \
     -pidfile "$HARNESS_DIR/qemu.pid" \
     "$@" > "$HARNESS_DIR/qemu.log" 2>&1 &
 

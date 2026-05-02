@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-echo "[Angband] Connecting to QEMU Serial Console..."
-echo "[*] Press Ctrl+] then 'q' to exit telnet."
-telnet localhost 4444
+echo "[Angband] QEMU Console Access"
+echo ""
+echo "  Kernel log (tail -f):  tail -f mordor_run/harness/serial.log"
+echo "  QEMU Monitor:          telnet localhost 4445"
+echo "  GDB:                   localhost:1234"

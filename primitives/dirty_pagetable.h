@@ -60,4 +60,8 @@ unsigned long pte_lookup_phys(void *vaddr);
 int pte_overwrite(unsigned long target_phys, const void *data,
                   size_t len, unsigned long offset);
 
+void *pte_get_addr(int idx);
+int pte_get_count(void);
+unsigned long pte_get_page_phys(int idx);
+
 #endif

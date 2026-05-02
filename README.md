@@ -197,25 +197,27 @@ A successful `run_and_verify.sh` run produces:
 - [x] CVE knowledge base with pre-configured exploit strategies and per-kernel-version applicability
 - [x] User + network namespace setup for CAP_NET_ADMIN exploitation
 - [x] CONFIG_RANDOM_KMALLOC_CACHES detection and page-level bypass primitive (Dirty Pagetable)
-- [x] KASLR bypass via kallsyms (parent namespace) + kcore ELF parsing for kernel memory reads
+- [x] KASLR bypass via kallsyms (parent namespace) + side-channel timing fallback
+- [x] CVE-2026-23209 (macvlan UAF) -- **FULL CHAIN VERIFIED** on kernel 6.8.0-106-generic
+  - UAF trigger: `free_netdev()` after failed `register_netdevice()` leaves stale `macvlan_source_entry->vlan` pointer
+  - Slab drain via dummy interface cycling (8 cycles × 32 interfaces)
+  - PTE reclaim via MAP_ANONYMOUS spray + pagemap scanning
+  - pcpu_stats corruption via fake macvlan_dev write
+  - modprobe_path overwrite → root shell
+  - **Verified**: privilege escalation achieved without sudo on Ubuntu 24.04 with permissive kernel settings
 
 ### In Progress
-- [ ] CVE-2026-23209 (macvlan UAF) -- **analyzed and confirmed real** on kernel 6.8.0-101
-  - UAF trigger works: `free_netdev()` after failed `register_netdevice()` leaves stale `macvlan_source_entry->vlan` pointer
-  - Panic confirmed at `macvlan_forward_source+0x78` (CR2=0xb0, `vlan->dev = NULL` deref via IPv6 DAD workqueue)
-  - `alloc_netdev_mqs → kvzalloc` path reclaims the freed slot (verified via dummy interface create/destroy)
-  - **Blocker**: `CONFIG_RANDOM_KMALLOC_CACHES` (16-way randomized caches) prevents same-cache spray from userspace; needs Dirty Pagetable page-level bypass to complete the chain
-  - Framework has ALL primitives needed (netlink ops, userns, KASLR leak, kcore ELF parsing, pcpu_stats write, Dirty Pagetable); just needs slab-drain + PTE-reclaim integration
+- [ ] CVE-2026-23412 (netfilter UAF) -- analyzed, needs implementation
+- [ ] CVE-2026-23340 -- analyzed, needs implementation
 
 ### Next
 - [ ] SMEP/SMAP bypass (ROP chain generation, kernel stack pivot)
 - [ ] KPTI bypass (swapgs + trampoline return)
 - [ ] Subsystem-specific trigger code (nf_tables, io_uring, bpf)
 - [ ] Multi-kernel-version symbol offset database
-- [ ] Full CVE-2026-23209 exploit chain: slab drain → PTE reclaim → pcpu_stats write → modprobe_path overwrite → init-ns root
-- [ ] Additional CVE targets (CVE-2026-23412, CVE-2026-23340)
 - [ ] Post-exploitation stability
 - [ ] CVSS score evidence generation for NIST submissions
+- [ ] Full CVE-2026-23209 chain without permissive sysctl (requires kernel with `kernel.unprivileged_userns_clone=1`)
 
 ## License
 

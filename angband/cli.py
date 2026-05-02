@@ -7,6 +7,7 @@ import yaml
 from angband.core.engine import StageEngine
 from angband.generators.poc_gen import PocGenerator
 from angband.runtime import (
+    current_run_dir,
     default_binary_path,
     default_config_path,
     default_source_path,
@@ -185,12 +186,24 @@ def generate(output: str):
     with open(config_file, "r", encoding="utf-8") as handle:
         config = yaml.safe_load(handle) or {}
 
-    output_path = default_source_path() if output is None else default_source_path().parent / output
-    binary_path = default_binary_path()
     mode = config.get("mode", "demo")
+    exploit_name = config.get("exploit_name", "exploit")
+    safe_name = exploit_name.lower().replace("-", "_").replace(" ", "_")
+
+    if output:
+        output_path = default_source_path().parent / output
+    elif mode == "demo":
+        output_path = current_run_dir() / "vuln_drill_exploit.c"
+    else:
+        output_path = current_run_dir() / f"{safe_name}.c"
+
+    if mode == "demo":
+        binary_path = current_run_dir() / "vuln_drill_exploit"
+    else:
+        binary_path = current_run_dir() / safe_name
 
     click.echo(f"[*] Mode: {mode}")
-    click.echo(f"[*] Generating C code from {config.get('exploit_name')}...")
+    click.echo(f"[*] Generating C code from {exploit_name}...")
 
     generator = PocGenerator(workspace_root() / "templates")
     generator.generate(config, str(output_path))

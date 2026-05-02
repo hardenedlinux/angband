@@ -125,3 +125,17 @@ int pte_overwrite(unsigned long target_phys, const void *data,
             target_phys);
     return -1;
 }
+
+void *pte_get_addr(int idx) {
+    if (idx < 0 || idx >= pte_count) return NULL;
+    return pte_addrs[idx];
+}
+
+int pte_get_count(void) {
+    return pte_count;
+}
+
+unsigned long pte_get_page_phys(int idx) {
+    if (idx < 0 || idx >= pte_count) return 0;
+    return pte_lookup_phys(pte_addrs[idx]);
+}

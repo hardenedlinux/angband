@@ -18,9 +18,10 @@ struct kaslr_ctx {
 /**
  * kaslr_leak_kallsyms_parent - Read kallsyms in the initial namespace.
  *
- * Uses sudo to read /proc/kallsyms.  Must be called BEFORE entering
- * any user namespace (i.e., in the parent process before clone).
- * Fills `out` with resolved symbol addresses.
+ * Reads /proc/kallsyms to resolve kernel symbol addresses.
+ * Must be called BEFORE entering any user namespace (i.e., in the
+ * parent process before clone).  Requires kptr_restrict to be disabled
+ * or /proc/sys/kernel/kptr_restrict to allow non-root reads.
  *
  * Returns 0 on success, -1 on failure.
  */

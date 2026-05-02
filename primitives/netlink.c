@@ -214,3 +214,26 @@ int nl_delete_link(int fd, const char *name)
 
     return nl_do_request(fd, &req.nlh);
 }
+
+int nl_create_dummy(int fd, const char *name)
+{
+    struct {
+        struct nlmsghdr  nlh;
+        struct ifinfomsg ifi;
+        char             attrbuf[NL_ATTRBUF_SIZE];
+    } req;
+    size_t max = sizeof(req);
+
+    nl_init_msg(&req.nlh, RTM_NEWLINK,
+                NLM_F_REQUEST | NLM_F_CREATE | NLM_F_EXCL | NLM_F_ACK,
+                ++nl_seq, max);
+
+    nl_add_str_attr_max(&req.nlh, IFLA_IFNAME, name, max);
+
+    struct rtattr *linkinfo = NLMSG_TAIL(&req.nlh);
+    nl_add_attr_max(&req.nlh, IFLA_LINKINFO, NULL, 0, max);
+    nl_add_str_attr_max(&req.nlh, IFLA_INFO_KIND, "dummy", max);
+    linkinfo->rta_len = (void *)NLMSG_TAIL(&req.nlh) - (void *)linkinfo;
+
+    return nl_do_request(fd, &req.nlh);
+}
