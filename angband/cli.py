@@ -120,6 +120,7 @@ def init(cve_or_commit: str, target: str):
             # Merge target-specific data
             target_data = _default_target_config(target)
             config["mitigations"] = target_data.get("mitigations", {})
+            config["cve_symbol_offsets"] = target_data.get("cve_symbol_offsets", {})
 
             with open(config_path, "w", encoding="utf-8") as handle:
                 yaml.safe_dump(config, handle, sort_keys=False)

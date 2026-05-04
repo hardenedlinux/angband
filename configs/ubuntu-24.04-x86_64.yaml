@@ -10,16 +10,28 @@ mitigations:
   cet: enabled
   pac: disabled
 
-# Symbol offsets from _printk for KASLR bypass.
-# The exploit leaks _printk address via UAF+OOB read on vuln_drill,
-# then adds these offsets to compute target symbols.
-# These offsets are constant for a given kernel binary.
-# To regenerate: sudo grep -w 'SYMBOL' /proc/kallsyms on the target.
+# Symbol offsets from _printk for KASLR bypass (demo/vuln_drill).
+# The exploit leaks _printk address via UAF+OOB read on vuln_drill.
 symbol_offsets:
   leak_symbol: _printk
   commit_creds: -0x6fae0
   prepare_kernel_cred: -0x6f560
   init_task: 0x2458f70
+
+# Symbol offsets from kernel_base for side-channel KASLR bypass (real CVEs).
+# Side-channel finds kernel_base, then adds these offsets to compute symbols.
+# Computed from /proc/kallsyms on 6.8.0-106-generic:
+#   startup_64 = 0xffffffff8b000090 (kernel text base ~0xffffffff8b000000)
+#   commit_creds = 0xffffffff8b1472f0, offset = 0x1472f0
+#   prepare_kernel_cred = 0xffffffff8b147870, offset = 0x147870
+#   modprobe_path = 0xffffffff8d7de440, offset = 0x3de440
+#   loopback_dev = 0xffffffff8bd06110, offset = 0x1d06110
+cve_symbol_offsets:
+  kernel_base: 0x0
+  commit_creds: 0x1472f0
+  prepare_kernel_cred: 0x147870
+  modprobe_path: 0x3de440
+  loopback_dev: 0x1d06110
 
 stages:
   prep:

@@ -209,19 +209,22 @@ void kaslr_apply_offsets(struct kaslr_ctx *ctx,
 {
     unsigned long base = ctx->kernel_base;
     if (!base) {
-        /* Try _printk as base */
         base = ctx->_printk;
         if (!base) return;
     }
 
-    /* Offsets can be absolute or relative to kernel base / _printk.
-     * The config YAML stores them relative to _printk. */
     if (ctx->_printk) {
         ctx->commit_creds   = ctx->_printk + off_commit_creds;
         ctx->prepare_kernel_cred = ctx->_printk + off_prepare_kernel_cred;
         ctx->init_task      = ctx->_printk + off_init_task;
         ctx->modprobe_path  = ctx->_printk + off_modprobe_path;
         ctx->loopback_dev   = ctx->_printk + off_loopback_dev;
+    } else if (ctx->kernel_base) {
+        ctx->commit_creds   = ctx->kernel_base + off_commit_creds;
+        ctx->prepare_kernel_cred = ctx->kernel_base + off_prepare_kernel_cred;
+        ctx->init_task      = ctx->kernel_base + off_init_task;
+        ctx->modprobe_path  = ctx->kernel_base + off_modprobe_path;
+        ctx->loopback_dev   = ctx->kernel_base + off_loopback_dev;
     }
 
     ctx->valid = (ctx->commit_creds > 0xffffffff00000000UL);

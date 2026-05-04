@@ -45,6 +45,7 @@ class PocGenerator:
             "confidence": config.get("confidence", "low"),
             # Symbol offsets for KASLR bypass (from target config)
             "symbol_offsets": config.get("symbol_offsets", {}),
+            "cve_symbol_offsets": config.get("cve_symbol_offsets", {}),
         }
 
         rendered = template.render(context)

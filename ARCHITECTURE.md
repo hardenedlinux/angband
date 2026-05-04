@@ -343,14 +343,17 @@ to produce an exploitation strategy automatically:
           exploit.yaml (mode: "exploit")
 ```
 
-### Strategy Map (bug class -> technique selection)
+### Strategy Map (bug class -> stage method selection)
 
-| Bug Class | Groom | Leak | Escalation |
-|-----------|-------|------|------------|
-| UAF | msg_msg / pipe_buffer spray | pipe_buffer.ops / msg_msg OOB | dirty_pagetable / modprobe_path |
-| Double-free | msg_msg / pipe_buffer spray | pipe_buffer.ops / msg_msg OOB | dirty_cred |
-| OOB write | msg_msg / setxattr spray | msg_msg OOB | modprobe_path / ROP chain |
-| Race condition | dirty_cred spray | pipe_buffer.ops | dirty_cred / USMA |
+| Bug Class | Groom | Trigger | Leak | Primitive | Escalate |
+|-----------|-------|---------|------|----------|---------|
+| UAF (hash stale) | slab drain + msg_msg spray | invalid name → free_netdev | kallsyms | PTE dirty pagetable → pcpu_stats | modprobe_path |
+| UAF (list-based) | msg_msg spray | close race → kfree_rcu | kallsyms | msg_msg reclaim → func ptr hijack | commit_creds / modprobe_path |
+| OOB write | msg_msg / setxattr spray | trigger condition | kallsyms | corrupt adjacent object | modprobe_path / commit_creds |
+| Double-free | msg_msg spray | double-free trigger | kallsyms | freelist corruption → obj conf | commit_creds / modprobe_path |
+| Race condition | dirty_cred spray | concurrent ops race | kallsyms | list corruption → LL_ATK | commit_creds |
+
+Note: `dirty_pagetable` is a **primitive** technique (provides arbitrary kernel write), not an escalate technique. The modprobe_path trigger is the escalate step after the write primitive is established.
 
 ## Jinja2 Templates
 
@@ -367,10 +370,12 @@ the appropriate C code for each stage:
 
 | Stage | Config Key | Options |
 |-------|-----------|---------|
-| Groom | `groom_method` | `msg_msg_spray`, `pipe_buffer_spray`, generic |
+| Groom | `groom_method` | `msg_msg_spray`, `pipe_buffer_spray`, `slab_drain`, `pattern_spray` |
 | Trigger | `bug_type` | `use_after_free`, `double_free`, `oob_write`, `oob_read` |
-| Leak | `leak_method` | `kallsyms`, `msg_msg_oob`, `pipe_buffer_ops` |
-| Primitive | `primitive_method` | `pipe_primitive`, `msg_msg_primitive`, `dirty_cred` |
-| Escalate | `escalate_method` | `modprobe_path`, `dirty_pagetable`, `dirty_cred`, `commit_creds`, `rop_chain` |
+| Leak | `leak_method` | `kallsyms`, `kallsyms_parent`, `sidechannel`, `msg_msg_oob` |
+| Primitive | `primitive_method` | `pcpu_stats_corrupt`, `msg_msg_reclaim`, `pipe_primitive`, `dirty_pagetable` |
+| Escalate | `escalate_method` | `modprobe_path`, `commit_creds`, `dirty_cred`, `signalfd_cred` |
+
+Note: `dirty_pagetable` is listed as an escalate option but is actually a **primitive** (write-enabler). In CVE-2026-23209, `dirty_pagetable` enables the write in the primitive stage; `modprobe_path` is the escalate step.
 
 Most real-mode code paths are scaffolded but not yet functional.

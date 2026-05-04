@@ -484,36 +484,6 @@ class VulnAnalyzer:
                 "Escalation via modprobe_path overwrite."
             ),
         },
-        "CVE-2026-23412": {
-            "cve_id": "CVE-2026-23412",
-            "cve_profile": "netfilter_uaf",
-            "bug_class": BugClass.USE_AFTER_FREE,
-            "subsystem": Subsystem.NETFILTER,
-            "affected_object": "nf_hook_entry",
-            "affected_slab_cache": "kmalloc-128",
-            "object_size": 128,
-            "groom_technique": "msg_msg_spray",
-            "groom_cache": "kmalloc-128",
-            "trigger_method": "nfnetlink_hooks_dump",
-            "leak_technique": "kallsyms",
-            "primary_primitive": "msg_msg_primitive",
-            "escalation_path": EscalationPath.MODPROBE_PATH,
-            "cleanup_method": "safe_reset",
-            "requires_namespaces": True,
-            "requires_userfaultfd": False,
-            "requires_io_uring": False,
-            "requires_unprivileged_bpf": True,
-            "spray_count": 256,
-            "confidence": "medium",
-            "introduced_in": "6.4.1",
-            "fixed_in": "6.12.78",
-            "ubuntu_fixed": "6.8.0-107",  # if exists, or later
-            "description": (
-                "netfilter BPF hook UAF: concurrent nfnetlink_hooks dump and "
-                "hook modification leads to use-after-free on nf_hook_entry. "
-                "Triggered via nfnetlink socket operations."
-            ),
-        },
     }
 
     def _lookup_known_cve(self, cve_id: str) -> ExploitPlan | None:
