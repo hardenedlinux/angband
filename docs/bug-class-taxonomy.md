@@ -21,9 +21,6 @@ The foundational classification of exploitation from the PaX team:
 | CVE | Subsystem | Object | Exploitation Technique | Status |
 |-----|-----------|--------|----------------------|--------|
 | CVE-2026-23209 | macvlan | net_device | pcpu_stats → arbitrary write → modprobe_path | WORKS |
-| CVE-2026-35555 | timerfd | timerfd_ctx | msg_msg reclaim → wqh.head → func pointer | HARD |
-| CVE-2026-44269 | perf | perf_event | msg_msg reclaim → destroy/overflow_handler | HARD |
-| CVE-2026-33289 | io_uring | io_kiocb | msg_msg reclaim → io_task_work.func | HARD |
 
 ### Exploitation Approaches for UAF
 
@@ -141,9 +138,6 @@ kmalloc-256-rcl slab: (reclaimable, different page)
 | Method | Target Cache | Notes |
 |--------|-------------|-------|
 | **msg_msg spray** | 48 to PAGE_SIZE bytes | Primary method, used in all CVEs |
-| **timerfd spray** | kmalloc-256 | CVE-2026-35555 (216 bytes actual) |
-| **perf_event spray** | kmalloc-256 | CVE-2026-44269 |
-| **io_uring spray** | kmalloc-256 | CVE-2026-33289 (stub) |
 | **pipe_buffer spray** | kmalloc-64 to kmalloc-1k | pipe_buffer=40B (kmalloc-64), pipe_inode_info larger |
 | **slab drain** | kmalloc-4k | macvlan exploit pattern fill |
 

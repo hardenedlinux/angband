@@ -24,6 +24,9 @@ int nl_delete_link(int fd, const char *name);
 int nl_create_macvlan(int fd, const char *name, const char *lower,
                       int mode, const unsigned char *macaddr, int macaddr_mode);
 int nl_create_dummy(int fd, const char *name);
+int nl_set_if_up(int fd, const char *name);
+int nl_set_mac(int fd, const char *name, const unsigned char *mac);
+int nl_add_ip_addr(int fd, const char *name, const char *ip, int prefix_len);
 
 int nl_add_attr_max(struct nlmsghdr *nlh, unsigned short type,
                     const void *data, unsigned short len, size_t max_size);

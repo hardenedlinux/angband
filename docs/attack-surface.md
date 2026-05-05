@@ -110,9 +110,6 @@ A comprehensive catalog of kernel attack surfaces (subsystems, syscalls, and int
 | 2 | pipe_buffer spray | kmalloc-64 → 1k | 40 → 1024 | No | Template support |
 | 3 | setxattr spray | Any kmalloc | User-controlled size | No | Not yet |
 | 4 | keyctl spray | Any kmalloc | Key payload size | No | Not yet |
-| 5 | timerfd spray | kmalloc-256 | 216 (fixed) | No | CVE-2026-35555 |
-| 6 | perf_event spray | kmalloc-256 | ~844 (fixed) | Need perf_event_paranoid=-1 | CVE-2026-44269 |
-| 7 | io_uring spray | kmalloc-256 | ~650+ (fixed) | No | CVE-2026-33289 |
 | 8 | cred_jar spray (DirtyCred) | cred_jar | Fixed (struct cred) | Need arbitrary free | Not yet |
 | 9 | slab drain + buddy | N/A (page level) | 4KB pages | No | macvlan pattern drain |
 | 10 | signalfd spray | kmalloc-256 | 104 (fixed) | No | Not yet |
@@ -161,9 +158,6 @@ A comprehensive catalog of kernel attack surfaces (subsystems, syscalls, and int
 | CVE | Groom | Trigger | Leak | Primitive | Escalate |
 |-----|-------|---------|------|-----------|----------|
 | CVE-2026-23209 | msg_msg + slab drain | macvlan netlink | kallsyms + residual | pcpu_stats / dirty_pagetable | modprobe_path |
-| CVE-2026-35555 | timerfd + msg_msg | close + rearm race | side-channel | wake_up_locked_poll hijack | modprobe_path |
-| CVE-2026-44269 | perf_event + msg_msg | perf mmap race (stub) | side-channel | destroy/overflow_handler hijack | modprobe_path |
-| CVE-2026-33289 | io_uring (stub) + msg_msg | io_uring race (stub) | side-channel | io_task_work.func hijack | modprobe_path |
 
 ## Modern Mitigation ↔ Technique Resistance Matrix
 

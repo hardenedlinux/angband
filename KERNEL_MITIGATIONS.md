@@ -50,9 +50,6 @@ entry    @ 24
 | CVE | Subsystem | Escalation | Status |
 |-----|-----------|-----------|--------|
 | CVE-2026-23209 | macvlan | modprobe_path | PATCHED (works on -106) |
-| CVE-2026-33289 | io_uring | modprobe_path / commit_creds | VULNERABLE - func ptr available |
-| CVE-2026-35555 | timerfd | modprobe_path / commit_creds | BLOCKED - list_del_rcu removes ctx from cancel_list before kfree_rcu |
-| CVE-2026-44269 | perf | modprobe_path / commit_creds | VULNERABLE - destroy/overflow_handler |
 
 ## Escalation Paths
 

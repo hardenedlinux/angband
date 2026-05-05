@@ -237,3 +237,81 @@ int nl_create_dummy(int fd, const char *name)
 
     return nl_do_request(fd, &req.nlh);
 }
+
+int nl_set_if_up(int fd, const char *name)
+{
+    struct {
+        struct nlmsghdr  nlh;
+        struct ifinfomsg ifi;
+        char             attrbuf[256];
+    } req;
+    size_t max = sizeof(req);
+
+    nl_init_msg(&req.nlh, RTM_NEWLINK,
+                NLM_F_REQUEST | NLM_F_ACK,
+                ++nl_seq, max);
+
+    int idx = if_nametoindex(name);
+    if (idx == 0) return -1;
+
+    struct ifinfomsg *ifi = NLMSG_DATA(&req.nlh);
+    ifi->ifi_index = idx;
+    ifi->ifi_flags = IFF_UP | IFF_RUNNING;
+
+    return nl_do_request(fd, &req.nlh);
+}
+
+int nl_set_mac(int fd, const char *name, const unsigned char *mac)
+{
+    struct {
+        struct nlmsghdr  nlh;
+        struct ifinfomsg ifi;
+        char             attrbuf[256];
+    } req;
+    size_t max = sizeof(req);
+
+    nl_init_msg(&req.nlh, RTM_NEWLINK,
+                NLM_F_REQUEST | NLM_F_ACK,
+                ++nl_seq, max);
+
+    int idx = if_nametoindex(name);
+    if (idx == 0) return -1;
+
+    struct ifinfomsg *ifi = NLMSG_DATA(&req.nlh);
+    ifi->ifi_index = idx;
+
+    nl_add_attr_max(&req.nlh, IFLA_ADDRESS, mac, 6, max);
+
+    return nl_do_request(fd, &req.nlh);
+}
+
+int nl_add_ip_addr(int fd, const char *name, const char *ip, int prefix_len)
+{
+    struct {
+        struct nlmsghdr  nlh;
+        struct ifinfomsg ifi;
+        char             attrbuf[512];
+    } req;
+    size_t max = sizeof(req);
+
+    nl_init_msg(&req.nlh, RTM_NEWADDR,
+                NLM_F_REQUEST | NLM_F_CREATE | NLM_F_EXCL | NLM_F_ACK,
+                ++nl_seq, max);
+
+    int idx = if_nametoindex(name);
+    if (idx == 0) return -1;
+
+    struct ifaddrmsg *ifa = NLMSG_DATA(&req.nlh);
+    memset(ifa, 0, sizeof(*ifa));
+    ifa->ifa_family = AF_INET;
+    ifa->ifa_prefixlen = prefix_len;
+    ifa->ifa_index = idx;
+
+    struct in_addr addr;
+    if (inet_pton(AF_INET, ip, &addr) <= 0) return -1;
+
+    nl_add_attr_max(&req.nlh, IFA_ADDRESS, &addr, sizeof(addr), max);
+    nl_add_attr_max(&req.nlh, IFA_LOCAL, &addr, sizeof(addr), max);
+
+    return nl_do_request(fd, &req.nlh);
+}

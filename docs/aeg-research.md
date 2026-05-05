@@ -91,9 +91,7 @@ Kernel UAF Bug
 **FUZE's UAF Classification**:
 | Type | Pattern | angband CVE Example |
 |------|---------|-------------------|
-| Alloc-Free-Use | Allocate → Free → Use freed memory | CVE-2026-35555 (timerfd) |
 | Free-Use | Free → Use (alloc happened elsewhere) | CVE-2026-23209 (macvlan) |
-| Use-Free | Use (get pointer) → Free → Use again | CVE-2026-33289 (io_uring) |
 
 **Relevance to angband (HIGH)**:
 - FUZE's UAF classification directly maps to angband's CVE_Analyzer
