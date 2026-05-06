@@ -228,9 +228,13 @@ angband/
 │   ├── analysis/
 │   │   └── vuln_analyzer.py    # CVE analysis: NVD fetch, bug classification
 │   ├── primitives/
-│   │   └── registry.py         # Exploit primitive library (7 techniques)
+│   │   └── registry.py         # Exploit primitive library (11 techniques)
 │   ├── recon/
-│   │   └── fingerprint.py      # QEMU guest kernel fingerprinting
+│   │   ├── fingerprint.py      # QEMU guest kernel fingerprinting
+│   │   └── slab.py             # Slab cache analysis, RANDOM_KMALLOC_CACHES detection
+│   ├── chaining/
+│   │   ├── capabilities.py     # Capability model for exploit stage dependencies
+│   │   └── orchestrator.py     # Multi-CVE pipeline orchestrator
 │   └── leak/
 │       └── kaslr.py            # KASLR bypass techniques (3 methods)
 ├── configs/                    # Per-target kernel configs
@@ -240,7 +244,8 @@ angband/
 │   ├── exploit.c.jinja2        # Demo mode (vuln_drill exploit)
 │   └── exploit_real.c.jinja2   # Real CVE mode (scaffolded)
 ├── primitives/                 # C reference implementations
-│   ├── msg_msg.c/h, pipe_buffer.c/h, dirty_cred.c/h
+│   ├── common.h, msg_msg.c/h, pipe_buffer.c/h, dirty_cred.c/h
+│   ├── dirty_pagetable.c/h, kaslr.c/h, netlink.c/h, userns.c/h
 ├── module/vuln_drill/          # Synthetic vulnerable kernel module
 │   ├── vuln_drill.c, drill.h, Makefile
 ├── harness/                    # QEMU VM lifecycle
@@ -249,7 +254,9 @@ angband/
 │   ├── stop.sh                 # Kill VM
 │   ├── reset.sh                # Fresh overlay, re-run cloud-init
 │   ├── console.sh              # Serial console (telnet :4444)
-│   └── import.sh               # Import custom QEMU image
+│   ├── dmesg_serial.sh         # Capture dmesg via serial console
+│   ├── import.sh               # Import custom QEMU image
+│   └── pack.sh                 # Package VM state for distribution
 ├── run_and_verify.sh           # End-to-end orchestration + verification
 ├── cleanup.sh                  # Runtime cleanup (3 levels)
 └── mordor_run/                 # Runtime output (gitignored)
@@ -300,7 +307,9 @@ The harness provides an isolated execution environment:
 | Stop | `harness/stop.sh` | Graceful shutdown, then SIGKILL if needed |
 | Reset | `harness/reset.sh` | Delete overlay, recreate from base (instant) |
 | Console | `harness/console.sh` | `telnet localhost 4444` for serial access |
+| Dmesg | `harness/dmesg_serial.sh` | Capture dmesg via serial console |
 | Import | `harness/import.sh` | Use a custom VM image |
+| Pack | `harness/pack.sh` | Package VM state for distribution |
 
 ## CVE Analysis Pipeline
 
@@ -376,6 +385,6 @@ the appropriate C code for each stage:
 | Primitive | `primitive_method` | `pcpu_stats_corrupt`, `msg_msg_reclaim`, `pipe_primitive`, `dirty_pagetable` |
 | Escalate | `escalate_method` | `modprobe_path`, `commit_creds`, `dirty_cred`, `signalfd_cred` |
 
-Note: `dirty_pagetable` is listed as an escalate option but is actually a **primitive** (write-enabler). In CVE-2026-23209, `dirty_pagetable` enables the write in the primitive stage; `modprobe_path` is the escalate step.
+Note: `dirty_pagetable` is a **primitive** (write-enabler), not an escalation technique. In CVE-2026-23209, `dirty_pagetable` enables the write in the primitive stage; `modprobe_path` is the escalate step.
 
 Most real-mode code paths are scaffolded but not yet functional.

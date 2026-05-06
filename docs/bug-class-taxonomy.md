@@ -20,7 +20,7 @@ The foundational classification of exploitation from the PaX team:
 
 | CVE | Subsystem | Object | Exploitation Technique | Status |
 |-----|-----------|--------|----------------------|--------|
-| CVE-2026-23209 | macvlan | net_device | pcpu_stats → arbitrary write → modprobe_path | WORKS |
+| CVE-2026-23209 | macvlan | net_device | pcpu_stats -> increment (too weak for modprobe_path) | NAMESPACE ROOT ONLY |
 
 ### Exploitation Approaches for UAF
 

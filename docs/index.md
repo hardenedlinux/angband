@@ -20,8 +20,8 @@ This index maps the knowledge base to the framework's 7-stage exploit pipeline. 
 ```
 STAGE 1: PREP
   └── Acquiring capabilities
-      docs/primitives/userns.c       — Namespace setup for CAP_NET_ADMIN
-      docs/primitives/kaslr.c        — Symbol resolution (kallsyms, sidechannel)
+      primitives/userns.c            — Namespace setup for CAP_NET_ADMIN
+      primitives/kaslr.c             — Symbol resolution (kallsyms, sidechannel)
       docs/novel-techniques.md:10    — KernelSnitch (heap KASLR leak)
 
 STAGE 2: GROOM
@@ -49,7 +49,7 @@ STAGE 3: TRIGGER
 
 STAGE 4: LEAK
   └── KASLR bypass and symbol resolution
-      docs/primitives/kaslr.c        — kallsyms + sidechannel implementations
+      primitives/kaslr.c             — kallsyms + sidechannel implementations
       docs/novel-techniques.md:10    — KernelSnitch (heap address leak)
       docs/novel-techniques.md:7     — Linear Mapping KASLR bypass (ARM64)
       docs/heap-exploitation.md      — msg_msg OOB read for residual data
@@ -70,7 +70,7 @@ STAGE 5: PRIMITIVE
       docs/heap-exploitation.md
         ├── Escalation Patterns A-D (modprobe_path, commit_creds, signalfd, dirty_pagetable)
         └── Pattern E: Page-Level UAF via struct file spray
-      docs/primitives/dirty_pagetable.c — PTE corruption for arbitrary write
+      primitives/dirty_pagetable.c   — PTE corruption for arbitrary write
 
 STAGE 6: ESCALATE
   └── Converting write primitive into privilege escalation
@@ -79,8 +79,8 @@ STAGE 6: ESCALATE
         ├── Pattern B: commit_creds via ROP chain
         ├── Pattern C: signalfd credential overwrite
         └── Pattern D: dirty_pagetable (PTE write → privilege)
-      docs/primitives/dirty_cred.c — dirty_cred escalation
-      docs/primitives/msg_msg.c    — msg_msg primitive
+      primitives/dirty_cred.c        — dirty_cred escalation
+      primitives/msg_msg.c           — msg_msg primitive
 
 STAGE 7: CLEANUP
   └── Stabilizing kernel state post-exploitation
@@ -91,9 +91,10 @@ STAGE 7: CLEANUP
 
 | CVE | Bug Class | Status | Key Doc |
 |-----|-----------|--------|---------|
-| CVE-2026-23209 | UAF (hash stale) | **WORKS - container escape** | `docs/CVE-2026-23209-analysis.md` |
+| CVE-2026-23209 | UAF (hash stale) | **UAF reachable; namespace root only** | `docs/CVE-2026-23209-analysis.md` |
+| CVE-2026-23112 | OOB write | **Remote DoS; kernel panic on production configs** | `docs/CVE-2026-23112-analysis.md` |
 
-**Note**: CVE-2026-23209 is for **container escape** (uid=0 in container → host root), NOT direct unprivileged privilege escalation. Requires `--privileged` container or CAP_SYS_ADMIN.
+**Note**: CVE-2026-23209 achieves **user namespace root** (uid=0 inside namespace) via pcpu_stats increment, NOT host root. The pcpu_stats primitive is too weak for `modprobe_path` overwrite. Host root requires function pointer hijack + ROP chain (not yet implemented). See the analysis doc for detailed feasibility assessment.
 
 **Demo (vuln_drill)**: Works from uid=1000 directly via `/proc/vuln_drill` interface - true privilege escalation demo.
 
@@ -124,6 +125,7 @@ Each CVE doc follows this structure:
 | `KERNEL_MITIGATIONS.md` | Kernel addresses, struct offsets, CVE patch status | Verified symbols, timerfd_ctx layout, sysctl requirements |
 | `ARCHITECTURE.md` | Framework internals | 7-stage pipeline, template structure, strategy map |
 | `AGENTS.md` | Agent instructions | Environment setup, workflows, safety rules, exploit chaining |
+| `TESTING.md` | End-to-end testing guide | Prerequisites, demo/CVE test steps, success criteria, troubleshooting |
 | `vkb.md` | **Ring 0 reference index** | All external sources (papers, tools, CVEs) with title + URL |
 
 ## Technique Selection Quick Reference

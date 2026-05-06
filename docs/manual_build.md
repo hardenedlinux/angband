@@ -104,7 +104,7 @@ The 9p mount means all logs written under `/mnt/angband/mordor_run/current/` are
 
 ### Prerequisites
 
-CVE-2026-23209 exploits a macvlan UAF for **container escape** (uid=0 in container → host root). It requires:
+CVE-2026-23209 exploits a macvlan UAF. The current implementation achieves **user namespace root** (uid=0 inside namespace) but NOT host root -- the pcpu_stats increment primitive is too weak for `modprobe_path` string overwrite. It requires:
 - Vulnerable kernel: **6.8.0-101-generic** (available in Ubuntu 24.04 HWE kernel)
 - The binary must run as uid=0 (in a privileged container or directly as root)
 - `iproute2` must be installed in the guest

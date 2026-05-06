@@ -189,19 +189,13 @@ def generate(output: str):
 
     mode = config.get("mode", "demo")
     exploit_name = config.get("exploit_name", "exploit")
-    safe_name = exploit_name.lower().replace("-", "_").replace(" ", "_")
 
     if output:
         output_path = default_source_path().parent / output
-    elif mode == "demo":
-        output_path = current_run_dir() / "vuln_drill_exploit.c"
     else:
-        output_path = current_run_dir() / f"{safe_name}.c"
+        output_path = default_source_path()
 
-    if mode == "demo":
-        binary_path = current_run_dir() / "vuln_drill_exploit"
-    else:
-        binary_path = current_run_dir() / safe_name
+    binary_path = default_binary_path()
 
     click.echo(f"[*] Mode: {mode}")
     click.echo(f"[*] Generating C code from {exploit_name}...")
@@ -214,6 +208,10 @@ def generate(output: str):
 
     primitives_dir = workspace_root() / "primitives"
     primitive_sources = sorted(primitives_dir.glob("*.c"))
+
+    primitive_sources = [p for p in primitive_sources
+                         if p.name not in ("nvmet_tcp_crash.c",)]
+
     include_flag = f"-I{primitives_dir}"
 
     compile_cmd = (

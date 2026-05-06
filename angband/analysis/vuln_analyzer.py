@@ -490,30 +490,32 @@ class VulnAnalyzer:
             "bug_class": BugClass.OUT_OF_BOUNDS_WRITE,
             "subsystem": Subsystem.BLOCK_DEVICE,
             "affected_object": "nvmet_tcp_cmd",
-            "affected_slab_cache": "kmalloc-1k",
-            "object_size": 704,
-            "groom_technique": "msg_msg_spray",
-            "groom_cache": "kmalloc-1k",
+            "affected_slab_cache": "kmalloc-8k",
+            "object_size": 7040,
+            "groom_technique": "simulation_only",
+            "groom_cache": "kmalloc-8k",
             "trigger_method": "nvmet_tcp_pdu",
-            "leak_technique": "kallsyms",
-            "primary_primitive": "msg_msg_primitive",
-            "escalation_path": EscalationPath.MODPROBE_PATH,
+            "leak_technique": "simulation_only",
+            "primary_primitive": "simulation_only",
+            "escalation_path": EscalationPath.UNKNOWN,
             "cleanup_method": "safe_reset",
             "requires_namespaces": False,
             "requires_userfaultfd": False,
             "requires_io_uring": False,
             "requires_unprivileged_bpf": False,
-            "spray_count": 256,
-            "confidence": "medium",
+            "spray_count": 0,
+            "confidence": "high",
             "introduced_in": "5.0",
             "fixed_in": "6.18.10",
             "ubuntu_fixed": "",
             "description": (
                 "NVMe-TCP target OOB write: nvmet_tcp_build_pdu_iovec() "
                 "walks past cmd->req.sg when PDU length exceeds sg_cnt, "
-                "reading adjacent memory as bogus scatterlist entries. "
-                "_copy_to_iter() then uses these bogus entries to write "
-                "PDU data to arbitrary kernel addresses."
+                "reading adjacent heap memory as bogus scatterlist entries. "
+                "_copy_to_iter() uses these bogus entries to write PDU data "
+                "to arbitrary kernel addresses (NULL ptr deref at 0xc -> oops). "
+                "Remote kernel panic on panic_on_oops=1 systems (cloud/k8s). "
+                "No controllable write for privilege escalation."
             ),
         },
     }

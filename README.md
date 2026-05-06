@@ -138,7 +138,7 @@ run_and_verify.sh
 | `angband/analysis/vuln_analyzer.py` | CVE-to-strategy engine (NVD API, bug classification) |
 | `angband/recon/fingerprint.py` | Target kernel probing via SSH |
 | `angband/leak/kaslr.py` | KASLR bypass technique library |
-| `angband/primitives/registry.py` | Exploit primitive registry (12 techniques) |
+| `angband/primitives/registry.py` | Exploit primitive registry (11 techniques) |
 | `angband/recon/slab.py` | Slab cache detection, RANDOM_KMALLOC_CACHES probe |
 | `primitives/` | Reusable C exploit libraries (netlink, userns, kaslr, dirty_pagetable) |
 | `module/vuln_drill/` | CTF kernel module with real UAF/OOB bugs + 4K alloc + kernel write |
@@ -155,7 +155,7 @@ run_and_verify.sh
 | `angband generate` | Generate C exploit from config, compile |
 | `angband analyze CVE-2024-1086` | Analyze CVE without generating code |
 | `angband recon` | Fingerprint QEMU guest kernel |
-| `angband list-primitives` | List available exploit primitives (12 techniques) |
+| `angband list-primitives` | List available exploit primitives (11 techniques) |
 | `angband pipeline` | Run 7-stage pipeline (Python stages) |
 
 ## VM Lifecycle
@@ -168,6 +168,8 @@ run_and_verify.sh
 | Reset to clean state | `bash harness/reset.sh` |
 | Import custom image | `bash harness/import.sh <image> [port] [user]` |
 | Serial console | `bash harness/console.sh` |
+| Capture dmesg via serial | `bash harness/dmesg_serial.sh` |
+| Package VM state | `bash harness/pack.sh` |
 
 ## Success Criteria
 
@@ -190,7 +192,7 @@ A successful `run_and_verify.sh` run produces:
 - [x] Reproducible exploit generation (`angband generate` -> uid=0 every time)
 - [x] CVE vulnerability analysis engine (NVD API, bug classification, version-range checking)
 - [x] Target environment fingerprinting (kernel version, mitigations, slab state)
-- [x] Exploit primitive library (12 techniques: msg_msg, pipe_buffer, setxattr, dirty_cred, modprobe_path, dirty_pagetable, commit_creds, netlink_ops, userns_setup, pcpu_stats, kallsyms_leak, kaslr_sidechannel)
+- [x] Exploit primitive library (11 techniques: msg_msg, pipe_buffer, setxattr, dirty_cred, modprobe_path, dirty_pagetable, commit_creds, netlink_ops, userns_setup, pcpu_stats, kallsyms_leak)
 - [x] QEMU isolation harness with overlay snapshots and instant reset
 - [x] Custom VM image import (`harness/import.sh`)
 - [x] Reusable C primitives auto-linked by `angband generate` (netlink, userns, KASLR, dirty_pagetable)
@@ -198,17 +200,16 @@ A successful `run_and_verify.sh` run produces:
 - [x] User + network namespace setup for CAP_NET_ADMIN exploitation
 - [x] CONFIG_RANDOM_KMALLOC_CACHES detection and page-level bypass primitive (Dirty Pagetable)
 - [x] KASLR bypass via kallsyms (parent namespace) + side-channel timing fallback
-- [x] CVE-2026-23209 (macvlan UAF) -- **FULL CHAIN VERIFIED** on kernel 6.8.0-106-generic
+- [x] CVE-2026-23209 (macvlan UAF) -- **UAF REACHABLE** on kernel 6.8.0-106-generic
   - UAF trigger: `free_netdev()` after failed `register_netdevice()` leaves stale `macvlan_source_entry->vlan` pointer
-  - Slab drain via dummy interface cycling (8 cycles × 32 interfaces)
+  - Slab drain via dummy interface cycling (8 cycles x 32 interfaces)
   - PTE reclaim via MAP_ANONYMOUS spray + pagemap scanning
   - pcpu_stats corruption via fake macvlan_dev write
-  - modprobe_path overwrite → root shell
-  - **Verified**: privilege escalation achieved without sudo on Ubuntu 24.04 with permissive kernel settings
+  - **Limitation**: pcpu_stats increment primitive too weak for `modprobe_path` overwrite; only achieves user namespace root (uid=0 in namespace), not host root
+  - Host root requires function pointer hijack + ROP chain (not yet implemented)
 
 ### In Progress
-- [ ] CVE-2026-23412 (netfilter UAF) -- analyzed, needs implementation
-- [ ] CVE-2026-23340 -- analyzed, needs implementation
+- [ ] CVE-2026-23112 (nvmet-tcp OOB write) -- analyzed, needs implementation
 
 ### Next
 - [ ] SMEP/SMAP bypass (ROP chain generation, kernel stack pivot)

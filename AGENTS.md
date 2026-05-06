@@ -17,6 +17,7 @@ The `docs/` directory contains detailed reference material. **Start with `docs/i
 | `docs/vkb.md` | **Ring 0 exploitation reference index** — all external sources (papers, tools, CVEs) with URLs |
 | `KERNEL_MITIGATIONS.md` | Verified kernel addresses, struct offsets, CVE patch status, sysctl requirements |
 | `ARCHITECTURE.md` | Full architecture with data flow diagrams, strategy map, template docs |
+| `TESTING.md` | End-to-end testing guide: prerequisites, demo/CVE test steps, success criteria, troubleshooting |
 
 ### When to consult which doc
 
@@ -30,6 +31,7 @@ The `docs/` directory contains detailed reference material. **Start with `docs/i
 | Understanding the template codegen | `ARCHITECTURE.md` → Jinja2 Templates section |
 | Looking up an external paper/tool/CVE reference | `docs/vkb.md` → Quick Lookup |
 | Understanding mitigations | `docs/vkb.md` → Defense & Mitigation Research |
+| Running end-to-end tests | `TESTING.md` → Step-by-step instructions |
 
 ## Core Architecture and Entrypoints
 *   **Purpose**: Angband is an automated kernel exploit generation framework. Its goal is to produce full-chain kernel exploits from CVE identifiers to accelerate severity analysis. Currently, it generates staged demo payloads (simulation-only), runs them in an isolated QEMU guest, and verifies kernel-side stage evidence through the synthetic `vuln_drill` module. Real exploit generation is the next milestone.
