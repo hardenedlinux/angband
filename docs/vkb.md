@@ -61,6 +61,9 @@ Notable submissions (see individual directories for full list):
 | CVE-2025-38617 | UAF | packet sockets | Unmitigated |
 | CVE-2025-38236 | UAF | AF_UNIX OOB | Fixed 6.9.8 |
 | CVE-2024-50264 | UAF | vsock (race) | Pwnie Award 2025 |
+| CVE-2026-31431 | Write | AF_ALG page-cache write | Copy Fail - AI-assisted discovery |
+| CVE-2026-43284 | Write | xfrm-ESP page-cache write | Dirty Frag - xfrm-ESP primitive |
+| CVE-2026-43500 | Write | RxRPC page-cache write | Dirty Frag - RxRPC primitive |
 
 ---
 
@@ -142,10 +145,38 @@ Notable submissions (see individual directories for full list):
 **Relevance**: Bug-hunting pattern for identifying workqueue-based UAFs. Referenced in `docs/novel-techniques.md` (technique #11).
 
 ### CVE-2025-38617: "A Race Within A Race" — physmap + SLAB_VIRTUAL bypass
-**Source**: Quang Le (@linkersec), Apr 2026  
-**URL**: `blog.calif.io/p/a-race-within-a-race-exploiting-cve`  
-**Key insight**: Nested race conditions bypass both `CONFIG_RANDOM_KMALLOC_CACHES` and `CONFIG_SLAB_VIRTUAL`. physmap spray provides alternative to slab-based spraying.  
+**Source**: Quang Le (@linkersec), Apr 2026
+**URL**: `blog.calif.io/p/a-race-within-a-race-exploiting-cve`
+**Key insight**: Nested race conditions bypass both `CONFIG_RANDOM_KMALLOC_CACHES` and `CONFIG_SLAB_VIRTUAL`. physmap spray provides alternative to slab-based spraying.
 **Relevance**: Shows even strongest mitigations can be bypassed. Referenced in `docs/novel-techniques.md` (technique #12).
+
+### Page-Cache Write Primitive: The Dirty Family (2022-2026)
+**Source**: Multiple researchers (Max Kellermann, Theori, @v4bel)
+**URL**: See individual CVE entries below
+
+The "Dirty" family represents three generations of page-cache write primitives. Each generation proves the attack concept more generalized and harder to mitigate.
+
+| CVE | Subsystem | Write Capability | Key Innovation |
+|-----|-----------|-----------------|---------------|
+| CVE-2022-0847 | Pipe | Arbitrary pipe buffer | First to prove page cache tampering |
+| CVE-2026-31431 | AF_ALG | 4-byte direct write | AI-assisted discovery |
+| CVE-2026-43284 | xfrm-ESP + RxRPC | 4+8 byte chained | Universal coverage via primitive chaining |
+
+**CVE-2022-0847 Dirty Pipe**:
+- **URL**: https://dirtypipe.cm4ull.com/
+- **Key insight**: pipe_buffer.flags not checked before write, allowing in-place modification of page cache pages
+
+**CVE-2026-31431 Copy Fail**:
+- **URL**: AI-assisted discovery via Theori/Xint Code platform
+- **Key insight**: AF_ALG crypto path writes decryption output to splice()-injected page cache pages
+
+**CVE-2026-43284 Dirty Frag**:
+- **URL**: https://v4bel.github.io/ (primary researcher disclosure)
+- **Key insight**: Chains xfrm-ESP (4-byte direct write, needs namespace) with RxRPC (8-byte indirect write, no privilege) for universal coverage
+- **xfrm-ESP root cause**: Jan 2017 commit "esp4/6: Avoid skb_cow_data whenever possible"
+- **RxRPC root cause**: June 2023 RxRPC commits
+
+**Relevance**: Page-cache write is the rarest and most valuable Write Primitive type. See `docs/primitives.md` for full taxonomy and chaining methodology.
 
 ---
 
@@ -252,5 +283,6 @@ Notable submissions (see individual directories for full list):
 | Gollum (LLM exploit gen) | [seanheelan.io](https://seanheelan.io) |
 | angr (binary analysis) | [github.com/angr/angr](https://github.com/angr/angr) |
 | Syzkaller | [github.com/google/syzkaller](https://github.com/google/syzkaller) |
+| Page-cache write primitive taxonomy | `docs/primitives.md` |
 | AEG research overview | `docs/aeg-research.md` |
 | All external refs in one place | This file (`docs/vkb.md`) |

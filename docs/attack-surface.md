@@ -128,6 +128,8 @@ A comprehensive catalog of kernel attack surfaces (subsystems, syscalls, and int
 
 ### Primitive (Write/Read) Techniques
 
+**Note**: For the full primitive taxonomy including page-cache write primitive (Dirty family), see `docs/primitives.md`.
+
 | # | Technique | Input | Output | CFI-Resistant? | angband Use |
 |---|-----------|-------|--------|----------------|-------------|
 | 1 | msg_msg reclaim + func ptr hijack | UAF in controlled object | Kernel code exec | No | timerfd, perf, io_uring |
@@ -140,6 +142,7 @@ A comprehensive catalog of kernel attack surfaces (subsystems, syscalls, and int
 | 8 | SLUBStick | Timing channel → cross-cache | Arbitrary r/w | Yes | Not yet |
 | 9 | signalfd cred overwrite | Page-UAF → signalfd → cred | Root | Yes (data-only) | Not yet |
 | 10 | RBTree pointer copy | Double-insert → copy pointer | Pointer aliasing | Yes | Not yet |
+| 11 | page_cache_write (Dirty family) | splice() + page cache manipulation | 4-8 byte controlled write | Yes | Not yet (see `docs/primitives.md`) |
 
 ### Escalate (Privilege Escalation) Techniques
 
@@ -170,6 +173,7 @@ A comprehensive catalog of kernel attack surfaces (subsystems, syscalls, and int
 | cred_jar spray | **Blocked** (cross-cache) | Partial | **Yes** (data-only) | No effect | **Blocked** (slab poison) | Partial |
 | SLUBStick | **Blocked** (full mitigation) | Partial (reduced) | **Yes** (data-only) | No effect | No effect | Partial |
 | Kernel One Gadget | No effect | No effect | **Bypasses** (JIT buffer) | No effect | No effect | No effect |
+| page_cache_write (Dirty) | **Blocked** (COW enforcement) | No effect | No effect | No effect | No effect | No effect |
 
 ## Key References
 

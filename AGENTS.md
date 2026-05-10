@@ -169,11 +169,179 @@ PaX attack paradigm classification and SLUB allocator internals.
 | kCFI/IBT | Data-only attacks preferred over ROP |
 | CPU pinning restriction | Reduces spray reliability ~20-30% |
 
+## Exploit Writer: Read Source Code First — Non-Negotiable Rule
+
+**Before writing any exploit code, the exploit writer MUST read the actual kernel
+source of the vulnerable subsystem.** This rule exists because every iteration of
+CVE-2026-31533 that skipped this step wasted days of effort on assumptions that were
+wrong:
+
+- Wrong trigger condition (flood never reached the -EBUSY threshold)
+- Wrong struct offsets (estimated rather than verified)
+- Wrong UAF write target (callback only wrote to data fields, not function pointers)
+- Wrong slab cache size (used kmalloc-256 spray when tls_rec is kmalloc-512+)
+
+All of these were answerable from the kernel source in under 30 minutes.
+
+### The six questions to answer from source before writing exploit.c
+
+| # | Question | Where to find the answer |
+|---|----------|--------------------------|
+| 1 | Exact function and file where the bug triggers | Fix commit diff, CVE description |
+| 2 | Exact syscall sequence to reach the vulnerable path | Source of the vulnerable function |
+| 3 | Exact kernel state that causes the bug (threshold, race window, etc.) | Source + fix diff |
+| 4 | Exact field(s) written during UAF/OOB — offset >= 48 for msg_msg exploit? | struct definition + pahole |
+| 5 | Exact struct size → which kmalloc cache | sizeof() from struct definition |
+| 6 | Which runtime code path is active in this kernel build | ethtool/sysctl/lsmod in VM |
+
+### How to get the source
+
+```bash
+# Fetch the exact file for kernel v6.8:
+curl -s https://raw.githubusercontent.com/torvalds/linux/v6.8/<path/to/file.c>
+
+# Read the fix commit diff (shows exactly what invariant was violated):
+curl -s https://github.com/torvalds/linux/commit/<hash>.patch | head -300
+
+# Get struct offsets from the loaded kernel module in the VM:
+ssh -i mordor_run/ssh/id_ed25519 -p 2222 ubuntu@localhost \
+  "unzstd /lib/modules/\$(uname -r)/kernel/<path>.ko.zst -o /tmp/m.ko && \
+   pahole -C <struct_name> /tmp/m.ko 2>/dev/null || echo 'no DWARF — use source'"
+```
+
+### Verify trigger reachability before full implementation
+
+After reading source, write a minimal Python/C reproducer that puts the kernel in
+the pre-trigger state. Run it in the VM and check the serial log and dmesg for any
+evidence the right code path was hit (KASAN report, Oops, unexpected errno, stat
+counter change). Only proceed to full exploit implementation once the trigger is
+confirmed reachable with the expected behavior.
+
+**If the trigger cannot be confirmed in the VM, the exploit is unverified regardless
+of how well the code compiles.**
+
+
+
+## Exploit Loop Pipeline — Verified Workflow
+
+The following ASCII diagram shows the **complete, verified exploit loop pipeline**
+with all actors, data flows, handoffs, and feedback loops. This is the authoritative
+reference for how the loop runs.
+
+```
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                        ANGBAND EXPLOIT LOOP PIPELINE                        ║
+║                  (Bug CVE → Serial-log Crash / uid=0 Shell)                 ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                              ║
+║  ┌────────────┐                                                              ║
+║  │ BOOKKEEPER │  Reads cve-list.md, picks next pending CVE,                 ║
+║  │  (Agent)   │  sets row to in_progress, opens iteration-log/CVE-X/        ║
+║  └─────┬──────┘                                                              ║
+║        │  CVE-ID + metadata                                                  ║
+║        ▼                                                                     ║
+║  ┌─────────────────────────────────────────────────────────────────────┐    ║
+║  │                    EXPLOIT WRITER  (Agent)                          │    ║
+║  │                                                                     │    ║
+║  │  Step 1:  Read source (fix diff + vulnerable function + structs)    │    ║
+║  │  Step 1b: Answer 6 source questions before touching exploit.c       │    ║
+║  │  Step 1c: Study existing exploits; label bad-code patterns          │    ║
+║  │  Step 1d: Plan escalation path from bug class + trigger evidence    │    ║
+║  │  Step 2:  Feasibility assessment (config, hardware, privilege)      │    ║
+║  │  Step 3:  7-stage chain design (prep/groom/trigger/…/escalate)     │    ║
+║  │  Step 4:  Write docs/cve-analysis/CVE-X-analysis.md                │    ║
+║  │  Step 5:  angband init + generate → fill placeholders → compile     │    ║
+║  │  Step 5d: Iterate in VM (verify-cve.sh) until serial log fires     │    ║
+║  │  Step 1d: Post-trigger: push escalation (OOPS→panic→uid=0)         │    ║
+║  │  Step 6:  Write exploit-loop/iteration-log/CVE-X/writer_summary.md │    ║
+║  └─────┬───────────────────────────────────────────────────────────────┘    ║
+║        │  exploit binary + writer_summary.md + CVE analysis doc             ║
+║        ▼                                                                     ║
+║  ┌──────────────────────────────────────────────────────────────────┐       ║
+║  │                    VERIFY-CVE.SH  (Script)                       │       ║
+║  │                                                                  │       ║
+║  │  1. Copy exploit → CVE-named binary (cve-XXXX-XXXXX)            │       ║
+║  │  2. Check VM state; launch harness if down                       │       ║
+║  │  3. Apply sysctls: kptr_restrict=0, userns=0, perf_paranoid=-1   │       ║
+║  │  4. Mount 9p host dir at /mnt/angband inside VM                  │       ║
+║  │  5. Run binary as ubuntu (no sudo) inside VM                     │       ║
+║  │  6. Health check: SSH alive after exploit?  → PANIC if dead      │       ║
+║  │  7. Read serial.log delta → classify UBSAN/KASAN/Call Trace/RIP  │       ║
+║  │  8. Classify outcome:                                             │       ║
+║  │       exit 0  → ESCALATED   (uid=0 confirmed)                   │       ║
+║  │       exit 1  → PANIC       (VM SSH dead / "Kernel panic" line)  │       ║
+║  │       exit 2  → OOPS        (Call Trace/BUG/UBSAN in serial)     │       ║
+║  │       exit 3  → UNVERIFIED  (no kernel output captured)          │       ║
+║  └─────┬────────────────────────────────────────────────────────────┘       ║
+║        │  exit code + exploit_run.log + serial_snippet.log                  ║
+║        ▼                                                                     ║
+║  ┌─────────────────────────────────────────────────────────────────────┐    ║
+║  │                    REVIEWER  (Agent)                                │    ║
+║  │                                                                     │    ║
+║  │  Reads: writer_summary.md + exploit_run.log + serial_snippet.log   │    ║
+║  │  Checks: all 6 source questions answered? YAML consistent?         │    ║
+║  │          trigger actually ran (not simulation_only)?               │    ║
+║  │          serial log checked (not just dmesg)?                      │    ║
+║  │          post-trigger escalation push attempted?                   │    ║
+║  │                                                                     │    ║
+║  │  Verdict:                                                           │    ║
+║  │    PASS      → Bookkeeper marks CVE finished / dos-oops / escalated│    ║
+║  │    ISSUES    → Writer gets rerun with specific feedback appended   │    ║
+║  └─────┬───────────────────────────────────────────────────────────────┘    ║
+║        │                                                                     ║
+║        ├──── PASS ──────────────────────────────────────────────────────►   ║
+║        │                                                           BOOKKEEPER║
+║        │                                                           updates   ║
+║        │                                                           cve-list  ║
+║        │                                                           status    ║
+║        │                                                                     ║
+║        └──── ISSUES ──────────────────────────────────────────────────────► ║
+║                                                               feedback appended
+║                                                               to EXPLOIT_WRITER_PROMPT
+║                                                               → next rerun  ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║  INFRASTRUCTURE                                                              ║
+║                                                                              ║
+║   Host filesystem ──9p──► /mnt/angband (inside QEMU VM)                     ║
+║   harness/launch.sh  ──►  QEMU VM  (KVM, -smep,-smap, 2 vCPU, 4 GB RAM)    ║
+║   serial.log  ◄────────── ttyS0 (kernel panic / Oops / UBSAN output here)  ║
+║   SSH :2222  ◄──────────  VM (health check + exploit execution)             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+```
+
+### Known Pipeline Bugs Fixed
+
+The following pipeline defects have been identified, fixed, and must not recur:
+
+| Bug | Symptom | Fix Applied |
+|-----|---------|-------------|
+| Serial log not checked | "0 new lines" but kernel crashed | verify-cve.sh reads serial_snippet.log; UBSAN/KASAN patterns now match OOPS |
+| UBSAN suppresses duplicates | 2nd verify run shows 0 lines even though bug fires | Restart VM between verify runs; UBSAN only reports each location once |
+| verify-cve.sh OOPS pattern too narrow | "UBSAN:" in serial not matched | Added `UBSAN:\|KASAN:\|slab-out-of-bounds\|use-after-free` to grep pattern |
+| Placeholders not filled | trigger prints "simulation_only" | Step 5b mandatory: fill every placeholder before verify |
+| Wrong stage ordering | leak AFTER trigger; addresses stale | KASLR resolve BEFORE trigger (CVE-2026-31533 lesson) |
+| Spray queues full on re-spray | 0 objects sprayed in rounds 2+ | Drain queues (msgrcv IPC_NOWAIT) before each re-fill |
+| NLM_F_ACK missing | `nl.recv()` blocks forever | Always set NLM_F_ACK on RTM_NEWROUTE netlink messages |
+| Wrong enum constants | -ERANGE on every attribute size | Read kernel uapi header; enumerate constants, don't assume values |
+
+### Pipeline Health Checks (run before each verify-cve.sh)
+
+```bash
+# 1. VM is alive and SSH works
+ssh -i mordor_run/ssh/id_ed25519 -p 2222 -o ConnectTimeout=3 ubuntu@localhost whoami
+
+# 2. Serial log is being written (size > 0)
+wc -c mordor_run/harness/serial.log
+
+# 3. Exploit binary exists and is not a demo placeholder
+ls -la mordor_run/current/exploit
+grep -c 'simulation_only\|implementation pending' mordor_run/current/exploit.c || echo 'no placeholders'
+
+# 4. YAML is consistent (escalate.method != dirty_pagetable unless you have the primitive)
+cat mordor_run/current/exploit.yaml | grep -E 'escalate|groom.*cache|trigger.*method'
+```
+
 ## Exploit Chaining / Vulnerability Pipelining
-
-### Concept
-
-A single UAF vulnerability often lacks a complete exploitation chain. Real-world exploits frequently **chain multiple CVEs** where:
 
 - **CVE-A** provides a capability (e.g., info leak, CAP_SYS_TIME, KASLR bypass)
 - **CVE-B** provides a primitive (e.g., limited write, heap control)

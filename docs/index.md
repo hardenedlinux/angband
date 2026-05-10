@@ -56,6 +56,10 @@ STAGE 4: LEAK
 
 STAGE 5: PRIMITIVE
   └── Converting bug into controlled write/read
+      docs/primitives.md
+        ├── 4-type taxonomy (Read/Write/Execute/Downgrade)
+        ├── Page-Cache Write Primitive — Dirty family (Pipe/AF_ALG/xfrm-ESP+RxRPC)
+        └── Primitive Chaining — coverage extension via complementary primitives
       docs/novel-techniques.md
         ├── 1.  LL_ATK — Linked List Attack (no heap leak needed)
         ├── 2.  Kernel One Gadget — eBPF JIT gadget for CFI bypass
@@ -89,10 +93,12 @@ STAGE 7: CLEANUP
 
 ## CVE-Specific Analysis Docs
 
+All CVE analysis documents live in `docs/cve-analysis/`.
+
 | CVE | Bug Class | Status | Key Doc |
 |-----|-----------|--------|---------|
-| CVE-2026-23209 | UAF (hash stale) | **UAF reachable; namespace root only** | `docs/CVE-2026-23209-analysis.md` |
-| CVE-2026-23112 | OOB write | **Remote DoS; kernel panic on production configs** | `docs/CVE-2026-23112-analysis.md` |
+| CVE-2026-23209 | UAF (hash stale) | **UAF reachable; namespace root only** | `docs/cve-analysis/CVE-2026-23209-analysis.md` |
+| CVE-2026-23112 | OOB write | **Remote DoS; kernel panic on production configs** | `docs/cve-analysis/CVE-2026-23112-analysis.md` |
 
 **Note**: CVE-2026-23209 achieves **user namespace root** (uid=0 inside namespace) via pcpu_stats increment, NOT host root. The pcpu_stats primitive is too weak for `modprobe_path` overwrite. Host root requires function pointer hijack + ROP chain (not yet implemented). See the analysis doc for detailed feasibility assessment.
 
@@ -120,6 +126,7 @@ Each CVE doc follows this structure:
 | `bug-class-taxonomy.md` | Classify bug type → select approach | 11 bug classes, PaX attack paradigms, SLUBStick, technique selection matrix |
 | `heap-exploitation.md` | SLUB internals, spray methods, escalation | SLUB layout, 6 spray methods, 5 escalation patterns, naive vs SLUBStick cross-cache |
 | `novel-techniques.md` | Cutting-edge techniques from kernelCTF | 13 techniques with code examples, selection matrix |
+| `primitives.md` | Primitive taxonomy, page-cache write, chaining | 4-type classification, Dirty family evolution, primitive chaining methodology |
 | `mitigations-defense.md` | VED/LKRG/AUTOSLAB defense taxonomy | 5 defense categories, VED matrix, LKRG mechanisms |
 | `manual_build.md` | QEMU guest testing walkthrough | VM setup, module loading, exploit execution |
 | `KERNEL_MITIGATIONS.md` | Kernel addresses, struct offsets, CVE patch status | Verified symbols, timerfd_ctx layout, sysctl requirements |

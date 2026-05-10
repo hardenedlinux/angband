@@ -324,7 +324,7 @@ def analyze(cve_id: str):
 @main.command(name="list-primitives")
 def list_primitives():
     """List available exploit primitives."""
-    from angband.primitives.registry import PRIMITIVE_REGISTRY
+    from angband.core.registry import PRIMITIVE_REGISTRY
 
     click.echo("[*] Available exploit primitives:\n")
     for name, cls in PRIMITIVE_REGISTRY.items():

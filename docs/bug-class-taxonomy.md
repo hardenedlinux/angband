@@ -14,6 +14,8 @@ The foundational classification of exploitation from the PaX team:
 
 **Key insight**: Level (3) is "probably equivalent to the halting problem" - there is no generic solution. Data-only attacks are the most stealthy and hardest to detect.
 
+**Note**: For the modern 4-type primitive classification (Read/Write/Execute/Downgrade) and page-cache write primitive taxonomy, see `docs/primitives.md`.
+
 ## Bug Classes & Angband Mapping
 
 ### Use-After-Free (UAF)
