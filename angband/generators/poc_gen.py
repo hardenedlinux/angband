@@ -1,13 +1,45 @@
+import re
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader
+
+
+CUSTOM_BLOCK_START = "/* CUSTOM_IMPL_START"
+CUSTOM_BLOCK_END = "CUSTOM_IMPL_END */"
 
 
 class PocGenerator:
     def __init__(self, template_dir: str | Path = "templates"):
         self.env = Environment(loader=FileSystemLoader(str(template_dir)))
 
-    def generate(self, config, output_path: str = "exploit.c"):
+    def _has_custom_code(self, content: str) -> bool:
+        """Check if content has any custom implementation markers."""
+        return CUSTOM_BLOCK_START in content
+
+    def _extract_custom_blocks(self, existing_content: str) -> dict[str, str]:
+        """Extract custom implementation blocks marked in existing file."""
+        blocks = {}
+        pattern = re.compile(
+            rf'{re.escape(CUSTOM_BLOCK_START)}_(\w+)\n(.*?)\n{re.escape(CUSTOM_BLOCK_END)}',
+            re.DOTALL
+        )
+        for match in pattern.finditer(existing_content):
+            blocks[match.group(1)] = match.group(2)
+        return blocks
+
+    def _merge_custom_blocks(self, new_content: str, blocks: dict[str, str]) -> str:
+        """Merge custom blocks into generated content at marker positions."""
+        result = new_content
+        for stage_name, custom_code in blocks.items():
+            marker = f"{CUSTOM_BLOCK_START}_{stage_name}\n"
+            if marker in result:
+                # Replace marker + placeholder with marker + custom code
+                pattern = rf'({re.escape(marker)}).*?({re.escape(CUSTOM_BLOCK_END)})'
+                replacement = rf'\1\n{custom_code}\n\CUSTOM_BLOCK_END)'
+                result = re.sub(pattern, replacement, result, flags=re.DOTALL)
+        return result
+
+    def generate(self, config, output_path: str = "exploit.c", preserve: bool = True):
         mode = config.get("mode", "demo")
 
         if mode == "exploit":
@@ -49,6 +81,22 @@ class PocGenerator:
         }
 
         rendered = template.render(context)
+
+        # If preserve=True and existing file has custom code, skip regeneration
+        output_path_obj = Path(output_path)
+        if preserve and output_path_obj.exists():
+            existing = output_path_obj.read_text(encoding="utf-8")
+            if self._has_custom_code(existing):
+                print(f"[Angband] Skipping regeneration - custom code detected in {output_path}")
+                print(f"[Angband] Run with --no-preserve to force regeneration")
+                return
+
+            # Try to merge custom blocks into new template
+            custom_blocks = self._extract_custom_blocks(existing)
+            if custom_blocks:
+                rendered = self._merge_custom_blocks(rendered, custom_blocks)
+                print(f"[Angband] Preserved {len(custom_blocks)} custom block(s)")
+
         with open(output_path, "w", encoding="utf-8") as handle:
             handle.write(rendered)
         print(f"[Angband] Payload generated at {output_path} (mode={mode})")

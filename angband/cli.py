@@ -176,8 +176,15 @@ def build_env():
 
 @main.command()
 @click.option("--output", default=None, help="Output C file")
-def generate(output: str):
-    """Generate exploit payload (demo or real based on mode in config)."""
+@click.option("--preserve/--no-preserve", default=True,
+              help="Preserve custom implementations in exploit.c (default: preserve)")
+def generate(output: str, preserve: bool):
+    """Generate exploit payload (demo or real based on mode in config).
+
+    Use --no-preserve to force regeneration from template (overwrites custom code).
+    Use --preserve (default) to keep custom implementations marked with
+    /* CUSTOM_IMPL_START_<stage_name> */ ... /* CUSTOM_IMPL_END */
+    """
     ensure_runtime_dirs()
     config_file = default_config_path()
     if not config_file.exists():
@@ -198,10 +205,11 @@ def generate(output: str):
     binary_path = default_binary_path()
 
     click.echo(f"[*] Mode: {mode}")
+    click.echo(f"[*] Preserve custom code: {preserve}")
     click.echo(f"[*] Generating C code from {exploit_name}...")
 
     generator = PocGenerator(workspace_root() / "templates")
-    generator.generate(config, str(output_path))
+    generator.generate(config, str(output_path), preserve=preserve)
 
     click.echo(f"[+] Payload generated: {output_path}")
     click.echo("[*] Compiling...")
