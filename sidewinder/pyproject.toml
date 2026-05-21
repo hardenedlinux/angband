@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=64.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sidewinder"
+version = "0.1.0"
+description = "Userland side-channel and Rowhammer vulnerability hunting toolkit"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "Security Research Team"}
+]
+dependencies = [
+    "click>=8.0",
+    "cffi>=1.15",
+    "rich>=13.0",
+    "pyelftools>=0.30",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+]
+
+[project.scripts]
+sidewinder = "sidewinder.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-timeout",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
